@@ -1,0 +1,16 @@
+deps/katago/
+deps/*.zip
+deps/*.bin.gz
+deps/*.py
+deps/*.txt
+deps/*.json
+deps/_npmtest/
+katago_logs/
+uploads/
+node_modules/
+__pycache__/
+*.pyc
+.workbuddy/
+src/_*.py
+.env
+
