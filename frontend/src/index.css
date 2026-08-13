@@ -166,14 +166,14 @@ body {
   flex-wrap: wrap;
 }
 .left {
-  flex: 3 1 380px; /* 棋盘侧约占 60% */
+  flex: 3 1 760px; /* 棋盘侧基准，给 720px 棋盘留足空间 */
   display: flex;
   flex-direction: column;
   align-items: center; /* 棋盘居中显示，不再贴左 */
-  min-width: 360px;
+  min-width: 760px;
 }
 .right {
-  flex: 2 1 320px; /* 讲解侧约占 40% */
+  flex: 2 1 360px; /* 讲解侧约占 40% */
   min-width: 320px;
   display: flex;
   flex-direction: column;
@@ -192,7 +192,7 @@ body {
   align-items: center;
   gap: 10px;
   margin-top: 12px;
-  max-width: 540px;
+  max-width: 720px;
 }
 .navigator input[type="range"] {
   flex: 1;

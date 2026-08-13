@@ -11,7 +11,8 @@ export interface ReviewEntry {
   color: StoneColor;
   actual: string; // SGF 坐标或 "PASS"（棋盘高亮绘制用，勿改）
   actual_gtp?: string; // GTP 记号（如 Q16），界面展示与讲解用
-  best: string; // GTP 记号（如 Q16）——AI 推荐落子
+  best: string; // AI 推荐落子：优先 GTP 记号，旧数据可能回退到 SGF
+  best_gtp?: string; // GTP 记号（如 Q16），界面展示与讲解用（后备 best）
   best_sgf?: string; // SGF 坐标（变化图绘制用）
   best_pv: string[];
   best_pv_sgf: string[]; // SGF 坐标序列

@@ -84,7 +84,7 @@ async function poll() {
       status: d.status,
       meta: d.meta ?? s.meta,
       entries: d.entries ?? s.entries,
-      mistakes: d.mistakes ?? [],
+      mistakes: (d.mistakes ?? []).slice().sort((a, b) => a - b),
       error: d.error ?? null,
       reportPath: d.report_path ?? null,
     }));

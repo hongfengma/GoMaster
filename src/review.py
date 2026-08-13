@@ -120,7 +120,8 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
                 "color": color,
                 "actual": actual_disp,        # SGF 坐标，供前端棋盘高亮绘制
                 "actual_gtp": actual_gtp,     # GTP 记号（如 Q16），供界面展示与讲解
-                "best": best_gtp,             # GTP 记号，供界面展示/报告/讲解（不再用 SGF 两位字母）
+                "best": best_gtp,             # GTP 记号，兼容旧字段
+                "best_gtp": best_gtp,         # GTP 记号（如 Q16），供界面展示与讲解
                 "best_sgf": best_sgf,         # SGF 坐标，供前端变化图绘制
                 "best_pv": best_pv,
                 "best_pv_sgf": best_pv_sgf,
@@ -139,9 +140,9 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
     finally:
         eng.close()
 
-    # 筛选失误手（按胜率下降排序），生成讲解
+    # 筛选失误手，按手序升序排列（前端列表按棋谱顺序展示，便于用户顺着看）
     mistakes = [e for e in entries if e["delta"] >= threshold]
-    mistakes.sort(key=lambda e: e["delta"], reverse=True)
+    mistakes.sort(key=lambda e: e["no"])
 
     # 若没有任何失误（极少），取下降最大的一手作为示例
     if not mistakes and entries:
