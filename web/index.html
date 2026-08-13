@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>围棋教练 · AI 复盘</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>围棋教练 · AI 复盘</h1>
+    <div class="sub">导入 SGF 棋谱，逐手看懂你的落子与 AI 推荐之间的差距</div>
+  </header>
+
+  <section id="import-panel" class="panel">
+    <div class="row">
+      <label>① 选择 SGF 文件：</label>
+      <input type="file" id="sgf-file" accept=".sgf,.txt" />
+    </div>
+    <div class="row">
+      <label>② 或粘贴 SGF 内容：</label>
+    </div>
+    <textarea id="sgf-text" placeholder="在此粘贴 .sgf 文件内容（如 (;GM[1]SZ[19]...))"></textarea>
+    <div class="row controls">
+      <label>用户水平：</label>
+      <select id="level">
+        <option value="入门">入门</option>
+        <option value="进阶">进阶</option>
+        <option value="挑战">挑战</option>
+      </select>
+      <label>分析精度(visits)：</label>
+      <input type="number" id="visits" value="80" min="20" max="400" step="20" />
+      <button id="start-btn" class="primary">开始复盘</button>
+      <button id="demo-btn">载入示例棋谱</button>
+    </div>
+    <div id="status" class="status"></div>
+  </section>
+
+  <main id="review-area" class="hidden">
+    <div class="left">
+      <canvas id="board"></canvas>
+      <div class="nav">
+        <button id="prev">◀ 上一手</button>
+        <input type="range" id="move-slider" min="0" max="1" value="0" />
+        <button id="next">下一手 ▶</button>
+        <span id="move-label"></span>
+      </div>
+      <div class="legend">
+        <span><i class="dot actual"></i>你的落子</span>
+        <span><i class="dot best"></i>AI 推荐</span>
+        <span><i class="dot pv"></i>推荐后续变化</span>
+      </div>
+    </div>
+
+    <div class="right">
+      <div id="overview" class="panel"></div>
+      <div id="move-detail" class="panel"></div>
+      <div class="panel">
+        <h3>失误手（点击跳转）</h3>
+        <ul id="mistake-list" class="mistake-list"></ul>
+      </div>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
