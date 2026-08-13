@@ -10,8 +10,8 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "electron": "electron .",
-    "electron:pack": "electron-packager . GoMaster --platform=win32 --arch=x64 --out=dist-electron --overwrite --extra-resource=server.py --extra-resource=src --extra-resource=deps --extra-resource=.env --extra-resource=dist --ignore=\"(dist|src|deps|server\\.py|node_modules/electron$|node_modules/electron-packager|dist-electron)\"",
-    "electron:pack:mac": "electron-packager . GoMaster --platform=darwin --arch=arm64 --out=dist-electron --overwrite --extra-resource=server.py --extra-resource=src --extra-resource=deps --extra-resource=.env --extra-resource=dist --ignore=\"(dist|src|deps|server\\.py|node_modules/electron$|node_modules/electron-packager|dist-electron)\""
+    "electron:pack": "electron-packager . GoMaster --platform=win32 --arch=x64 --out=dist-electron --overwrite --extra-resource=../server.py --extra-resource=../src --extra-resource=../deps --extra-resource=../.env --extra-resource=dist --ignore=\"(dist|src|deps|server\\.py|node_modules/electron$|node_modules/electron-packager|dist-electron)\"",
+    "electron:pack:mac": "electron-packager . GoMaster --platform=darwin --arch=arm64 --out=dist-electron --overwrite --extra-resource=../server.py --extra-resource=../src --extra-resource=../deps --extra-resource=../.env --extra-resource=dist --ignore=\"(dist|src|deps|server\\.py|node_modules/electron$|node_modules/electron-packager|dist-electron)\""
   },
   "dependencies": {
     "react": "^19.2.8",
