@@ -87,15 +87,16 @@ export function drawBoard(ctx: CanvasRenderingContext2D, d: DrawData): void {
     ctx.stroke();
   }
 
-  // 坐标标记（列 a..t 跳过 i；行 底=1 顶=size）
+  // 坐标标记（列 A..T 跳过 I，大写 GTP 记法与界面展示一致；行 底=1 顶=size）
   ctx.fillStyle = "#3a2a12";
   ctx.font = "12px sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   for (let col = 0; col < size; col++) {
     const x = margin + col * cell;
-    ctx.fillText(colLabel(col), x, margin / 2);
-    ctx.fillText(colLabel(col), x, boardPx - margin / 2);
+    const lbl = colLabel(col).toUpperCase();
+    ctx.fillText(lbl, x, margin / 2);
+    ctx.fillText(lbl, x, boardPx - margin / 2);
   }
   for (let row = 0; row < size; row++) {
     const y = margin + row * cell;

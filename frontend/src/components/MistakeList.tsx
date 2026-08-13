@@ -14,9 +14,11 @@ export default function MistakeList() {
       </div>
     );
   }
+  // 按手序（从小到大）排列，便于用户顺着棋谱顺序回顾失误手
+  const ordered = [...mistakes].sort((a, b) => a - b);
   return (
     <div className="mistake-list">
-      {mistakes.map((no) => {
+      {ordered.map((no) => {
         const e = entries.find((x) => x.no === no);
         const cn = e ? (e.color === "B" ? "黑" : "白") : "";
         const ready = e && e.explain;
@@ -27,7 +29,7 @@ export default function MistakeList() {
             onClick={() => goToMove(no)}
           >
             <span>
-              第 {no} 手（{cn}） 你:{e?.actual ?? "…"} → 推荐:{e?.best ?? "…"}
+              第 {no} 手（{cn}） 你:{e?.actual_gtp ?? e?.actual ?? "…"} → 推荐:{e?.best ?? "…"}
             </span>
             <span className="delta">
               {e ? sign(e.delta) : "…"}

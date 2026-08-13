@@ -8,7 +8,7 @@
 //
 // 说明：Python 运行时依赖本机 PATH 中的 python（老马本机已具备）。
 // 打包后 server.py / src / deps / .env 通过 --extra-resource 放到 resources/ 下（asar 外，可写）。
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, Menu } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
@@ -109,10 +109,14 @@ function createWindow() {
     },
   });
   win.loadURL(SERVER_URL);
+  // 无菜单窗口：去掉默认原生菜单栏（文件/编辑/视图等对本应用无意义）
+  win.removeMenu();
   // win.webContents.openDevTools();
 }
 
 app.whenReady().then(async () => {
+  // 全局移除默认应用菜单（含 macOS 顶部菜单），实现无菜单窗口
+  Menu.setApplicationMenu(null);
   await startBackend();
   createWindow();
   app.on("activate", () => {

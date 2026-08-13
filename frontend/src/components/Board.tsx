@@ -13,7 +13,9 @@ export default function Board() {
     const canvas = canvasRef.current;
     if (!canvas || size <= 0) return;
     const margin = 30;
-    const cell = Math.min(38, Math.floor((560 - margin * 2) / (size - 1)));
+    const targetBoard = 640; // 期望棋盘边长（像素）
+    const maxCell = 56; // 单格上限，避免 9 路时格子过大
+    const cell = Math.min(maxCell, Math.floor((targetBoard - margin * 2) / (size - 1)));
     const boardPx = margin * 2 + cell * (size - 1);
     const dpr = window.devicePixelRatio || 1;
     canvas.width = boardPx * dpr;

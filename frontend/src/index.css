@@ -29,7 +29,7 @@ body {
 }
 
 .app {
-  max-width: 1080px;
+  max-width: 1180px;
   margin: 0 auto;
   padding: 20px 18px 48px;
 }
@@ -166,10 +166,14 @@ body {
   flex-wrap: wrap;
 }
 .left {
-  flex: 0 0 auto;
+  flex: 3 1 380px; /* 棋盘侧约占 60% */
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* 棋盘居中显示，不再贴左 */
+  min-width: 360px;
 }
 .right {
-  flex: 1;
+  flex: 2 1 320px; /* 讲解侧约占 40% */
   min-width: 320px;
   display: flex;
   flex-direction: column;

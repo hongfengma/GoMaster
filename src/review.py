@@ -11,7 +11,13 @@ import os
 import sys
 
 from config import DEFAULT_MAX_VISITS, DEFAULT_THRESHOLD, USER_LEVEL
-from go_board import sgf_to_xy, xy_to_gtp, xy_to_sgf, gtp_to_xy
+from go_board import (
+    sgf_to_xy,
+    xy_to_gtp,
+    xy_to_sgf,
+    gtp_to_xy,
+    board_to_ascii,
+)
 from sgf_parser import parse_sgf
 from katago_engine import KataGoEngine
 from explainer import explain_move
@@ -74,6 +80,8 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
             best_pv = best.get("pv", [])
             best_xy = gtp_to_xy(best_gtp, size)
             best_sgf = "PASS" if best_xy is None else xy_to_sgf(*best_xy)
+            # 实际落子的 GTP 显示坐标（用于讲解与界面展示）
+            actual_gtp = _sgfcoord_to_gtp(sgf_coord, size)
             # 变化树转 SGF 序列，供前端画线
             best_pv_sgf = []
             for c in best_pv[:6]:
@@ -110,8 +118,10 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
             entry = {
                 "no": i + 1,
                 "color": color,
-                "actual": actual_disp,
-                "best": best_sgf,
+                "actual": actual_disp,        # SGF 坐标，供前端棋盘高亮绘制
+                "actual_gtp": actual_gtp,     # GTP 记号（如 Q16），供界面展示与讲解
+                "best": best_gtp,             # GTP 记号，供界面展示/报告/讲解（不再用 SGF 两位字母）
+                "best_sgf": best_sgf,         # SGF 坐标，供前端变化图绘制
                 "best_pv": best_pv,
                 "best_pv_sgf": best_pv_sgf,
                 "top3": top3,
@@ -122,7 +132,7 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
             }
             entries.append(entry)
             flag = " ⚠失误" if delta >= threshold else ""
-            print(f"  第{i+1}手({color}): 实际 {actual_disp} / 推荐 {best_sgf} | "
+            print(f"  第{i+1}手({color}): 实际 {actual_gtp} / 推荐 {best_gtp} | "
                   f"胜率 {ai_wr*100:.1f}%→{actual_wr*100:.1f}% (Δ{delta*100:+.1f}%){flag}")
             if progress_cb:
                 progress_cb({"type": "move", "entry": dict(entry)})
@@ -140,17 +150,28 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
     print(f"[复盘] 命中失误手 {len(mistakes)} 个，开始生成讲解...")
     for e in mistakes:
         recent = []
-        # 构造前情：最近若干手坐标（含本手之前）
+        # 构造前情：最近若干手坐标（GTP 记号，便于模型定位）
         idx = e["no"] - 1
         start = max(0, idx - 6)
         for j in range(start, idx):
             c, coord = moves[j]
-            disp = coord if (coord and len(coord) >= 2) else "PASS"
+            disp = _sgfcoord_to_gtp(coord, size)
             recent.append(f"{c}{disp}")
+        # 生成「本手落子前」的真实局面 ASCII 快照（★=推荐点 ◆=实际点），
+        # 让讲解器基于真实盘面而非变化图来讲，并具备左右上下的空间认知。
+        coord_actual = moves[idx][1] if 0 <= idx < len(moves) else None
+        bxy = (gtp_to_xy(e["best"], size)
+               if e.get("best") not in ("PASS", "pass", None) else None)
+        best_sgf_for_board = "PASS" if bxy is None else xy_to_sgf(*bxy)
+        board_ascii = board_to_ascii(
+            moves[:idx], size,
+            actual_sgf=coord_actual,
+            best_sgf=best_sgf_for_board,
+        )
         e["explain"] = explain_move(
             move_no=e["no"],
             color_cn="黑" if e["color"] == "B" else "白",
-            actual_sgf=e["actual"],
+            actual_sgf=e["actual_gtp"],
             best_sgf=e["best"],
             ai_wr=e["ai_wr"] * 100,
             actual_wr=e["actual_wr"] * 100,
@@ -161,6 +182,7 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
             level=level,
             top3=e.get("top3", []),
             phase=e.get("phase", "中盘"),
+            board_ascii=board_ascii,
         )
         if progress_cb:
             progress_cb({"type": "explain", "no": e["no"], "explain": e["explain"]})
@@ -219,7 +241,7 @@ def _build_report(meta, entries, mistakes, threshold, level, max_visits):
         lines.append(f"### 第 {e['no']} 手（{cn}方）\n")
         lines.append("| 项目 | 内容 |")
         lines.append("| --- | --- |")
-        lines.append(f"| 实际落子 | **{e['actual']}** |")
+        lines.append(f"| 实际落子 | **{e.get('actual_gtp') or e['actual']}** |")
         lines.append(f"| AI 推荐 | **{e['best']}** |")
         lines.append(f"| 胜率变化 | {e['ai_wr']*100:.1f}% → {e['actual_wr']*100:.1f}%"
                      f"（下降 {e['delta']*100:.1f} 个百分点） |")
@@ -237,7 +259,7 @@ def _build_report(meta, entries, mistakes, threshold, level, max_visits):
         cn = "黑" if e["color"] == "B" else "白"
         mark = "⚠" if e["delta"] >= threshold else ""
         lines.append(
-            f"| {e['no']} | {cn} | {e['actual']} | {e['best']} | "
+            f"| {e['no']} | {cn} | {e.get('actual_gtp') or e['actual']} | {e['best']} | "
             f"{e['ai_wr']*100:.1f}% | {e['actual_wr']*100:.1f}% | "
             f"{e['delta']*100:+.1f}% {mark} |"
         )
