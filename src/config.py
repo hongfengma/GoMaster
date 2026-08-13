@@ -27,8 +27,13 @@ _load_dotenv()
 
 # 项目根目录：src/config.py 的上一级，跨平台自动定位（不再硬编码 Windows 路径）
 HERE = os.path.dirname(os.path.abspath(__file__))
+# 开发态：HERE=仓库根/src，PROJ=仓库根
+# 打包态：server.py 位于 resources/，src 经 --extra-resource 落到 resources/src，
+#         HERE=resources/src，PROJ=resources
 PROJ = os.path.dirname(HERE)
-DEPS = os.path.join(PROJ, "deps")
+# deps（KataGo 权重/exe、分析配置）经 --extra-resource 落到与 src 同级的 deps 目录，
+# 故直接基于 HERE 的上一级定位，开发态=仓库根/deps，打包态=resources/deps，两者通用。
+DEPS = os.path.join(HERE, "..", "deps")
 
 # KataGo 可执行文件：跨平台自动探测（Windows 为 katago.exe，macOS/Linux 为 katago）
 _KATAGO_DIR = os.path.join(DEPS, "katago")

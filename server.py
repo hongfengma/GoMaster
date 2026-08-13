@@ -26,6 +26,12 @@ from sgf_parser import parse_sgf
 from review import run_review
 
 WEB_DIR = os.path.join(HERE, "web")
+# 正式前端构建产物（优先）：开发态在 <repo>/frontend/dist；
+# 打包态 server.py 位于 resources/，dist 经 --extra-resource 落到 resources/dist。
+_candidate_dist = os.path.join(HERE, "frontend", "dist")
+if not os.path.isdir(_candidate_dist):
+    _candidate_dist = os.path.join(HERE, "dist")
+DIST_DIR = _candidate_dist
 UPLOAD_DIR = os.path.join(HERE, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -136,12 +142,26 @@ class Handler(BaseHTTPRequestHandler):
             rel = path.lstrip("/")
         # 防目录穿越
         rel = rel.replace("\\", "/")
-        full = os.path.normpath(os.path.join(WEB_DIR, rel))
-        if not full.startswith(os.path.normpath(WEB_DIR)):
+        # 优先正式前端构建产物（frontend/dist），回退零依赖 MVP（web/）
+        full = None
+        for base in (DIST_DIR, WEB_DIR):
+            norm_base = os.path.normpath(base)
+            cand = os.path.normpath(os.path.join(base, rel))
+            if cand.startswith(norm_base) and os.path.isfile(cand):
+                full = cand
+                break
+        if full is None:
+            # SPA 回退：dist 下未知路径交给 index.html；否则 404
+            dist_index = os.path.normpath(os.path.join(DIST_DIR, "index.html"))
+            if os.path.isfile(dist_index):
+                full = dist_index
+            else:
+                self._send(404, {"error": "not found"})
+                return
+        norm_full = os.path.normpath(full)
+        if not (norm_full.startswith(os.path.normpath(DIST_DIR))
+                or norm_full.startswith(os.path.normpath(WEB_DIR))):
             self._send(403, {"error": "forbidden"})
-            return
-        if not os.path.isfile(full):
-            self._send(404, {"error": "not found"})
             return
         ext = os.path.splitext(full)[1].lower()
         ctype = MIME.get(ext, "application/octet-stream")
