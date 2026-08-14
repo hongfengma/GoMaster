@@ -1,8 +1,8 @@
 # 围棋教练 AI 复盘与解说系统 —— 解决方案与可行架构
 
-> 状态：**v0.6 · 前端 MVP + 7 项反馈改造完成（2026-08-13）**
-> 当前阶段：端到端可用 —— 后端（KataGo+DeepSeek 复盘）+ 前端（零依赖 Web UI）已联通，浏览器即可逐手复盘
-> 本次改动详见 `CHANGELOG_v0.6.md`；Mac 迁移见 `MAC_SETUP.md`
+> 状态：**v0.7.1 · 正式前端（React+TS+Zustand）已构建验证；Electron 桌面 exe 已在本机（沙箱）打包成功（2026-08-13）**
+> 当前阶段：端到端可用 —— 后端（KataGo+DeepSeek 复盘）+ 前端（正式 React UI / 零依赖 MVP 兜底）已联通，浏览器或桌面窗口即可逐手复盘
+> 本次改动详见 `CHANGELOG_v0.6.md`；Mac 迁移见 `MAC_SETUP.md`；正式前端与打包见 `frontend/README.md`
 
 ---
 
@@ -17,10 +17,10 @@
 | 商业模式 | 暂时自用，授权模块后置 |
 | **核心场景** | **复盘指导优先**：导入 SGF → 逐手复盘 → 对比实际落子 vs 推荐选点 → 大模型讲解差距 |
 
-**⚠️ 前端实现现状（v0.5 重要变更）：** 沙箱环境中 `npm registry` 不可达（被网络白名单拦截），无法 `npm install` React/Vite/Electron。为让前端**先跑起来、尽早验证价值**，阶段 1 前端先用**零依赖原生方案**实现：
-- 前端：`web/`（原生 HTML + CSS + 原生 JS + Canvas 画棋盘），无任何 npm 包。
-- 服务：Python 标准库 `http.server`（`server.py`），零第三方依赖，托管前端 + 提供分析 API。
-- **后续迁移**：本机有网后，把 `web/app.js` 的棋盘渲染/坐标/逐手导航逻辑平移为 React 组件，把 `server.py` 换成 FastAPI（或保留），用 Electron 套壳即可实现跨平台桌面应用。分析后端 `src/` 与 API 契约不变。
+**前端实现现状（v0.5→v0.7 演进）：** 阶段 1 用零依赖原生方案（`web/`）先跑通验证价值；v0.7 已落地**正式前端** `frontend/`（Vite + React 19 + TypeScript + Zustand），棋盘 Canvas 渲染、逐手导航、坐标/变分序号、Markdown 讲解等功能平移自 MVP 并组件化。后端 `server.py` + `src/` 的 API 契约**完全不变**；`server.py` 现优先托管 `frontend/dist`，缺失时回退 `web/`。Electron 桌面外壳（`electron/main.cjs`）已就绪，因需从 GitHub 下载二进制，安装/打包在老马本机进行。
+- 前端：`frontend/`（React + TS + Zustand，Canvas 棋盘）
+- 服务：Python 标准库 `server.py`（零第三方依赖），同时托管正式前端与 MVP 兜底
+- 桌面：Electron 外壳加载 `http://127.0.0.1:8765`（后端不变）
 
 **KataGo 资源（老马提供）：**
 - 仓库：https://github.com/lightvector/KataGo
@@ -123,7 +123,7 @@ Slogan 参考：每一步，都看清自己与高手之间的那几目棋。
 - 接口：官方兼容 OpenAI 协议（`https://api.deepseek.com/v1`），模型 `deepseek-v4-flash`，Key 本地配置。
 - 实测：返回 200，讲解质量高（生活化比喻 + 棋理融入），适合初学者。
 
-### 5.5 前端（零依赖 Web 版，v0.5 新增）
+### 5.5 前端（v0.5 零依赖 MVP `web/` + v0.7 正式前端 `frontend/`）
 
 **运行方式：**
 ```
@@ -145,6 +145,8 @@ python server.py 8765        # 需 Python 3（标准库，无需 pip install）
 - 导航：滑块（第 0~N 手）、上一手/下一手、失误手列表点击跳转。
 - 信息面板：当前手实际 vs 推荐、胜率(推荐)→胜率(实际)、胜率差 Δ、DeepSeek 讲解文本。
 - 总览：总手数、已分析、失误手数、最大偏差手。
+
+> **v0.7 正式前端 `frontend/`**：与 `web/` 功能对等，技术栈升级为 Vite + React + TypeScript + Zustand，棋盘用 Canvas 渲染，讲解用**内置轻量 Markdown 渲染器**（不依赖 react-markdown，避免沙箱装包卡死）。构建产物 `frontend/dist` 由 `server.py` 自动托管（无 dist 时回退 `web/`）。**v0.7.1 已在本机（沙箱，走 npmmirror 镜像）用 electron-packager 打包出 `GoMaster.exe`**（Windows 免安装包，resources 内嵌 server.py/src/deps/.env/dist），后端路径已适配开发态/打包态。详见 `frontend/README.md`。
 
 ---
 
@@ -239,7 +241,7 @@ python server.py 8765        # 需 Python 3（标准库，无需 pip install）
 2. 前端功能补强：设置面板（DeepSeek Key/权重路径）、讲解加载态、移动端适配。
 3. 分析缓存：避免重复分析同一局面，加速大棋谱。
 4. 19 路支持与更强权重接入（视老马机器性能）。
-5. 阶段 2 教学增强 + 本机有网后迁移 React+Electron 正式桌面应用。
+5. 阶段 2 教学增强 + **v0.7 已启动正式前端迁移**（React+Electron，见 `frontend/`）：沙箱可构建验证，Electron 本机打包待老马本机执行。
 
 ---
 

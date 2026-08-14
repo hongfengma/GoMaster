@@ -1,0 +1,33 @@
+{
+  "name": "frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "oxlint",
+    "preview": "vite preview",
+    "electron": "electron .",
+    "electron:pack": "npm run build && electron-packager . GoMaster --platform=win32 --arch=x64 --out=dist-electron-v074 --overwrite --extra-resource=../server.py --extra-resource=../src --extra-resource=../deps --extra-resource=../.env --extra-resource=dist --ignore=\"(dist|src|deps|server\\.py|__pycache__|node_modules/electron$|node_modules/electron-packager|dist-electron*)\"",
+    "electron:pack:mac": "npm run build && electron-packager . GoMaster --platform=darwin --arch=arm64 --out=dist-electron-v074 --overwrite --extra-resource=../server.py --extra-resource=../src --extra-resource=../deps --extra-resource=../.env --extra-resource=dist --ignore=\"(dist|src|deps|server\\.py|__pycache__|node_modules/electron$|node_modules/electron-packager|dist-electron*)\"",
+    "electron:pack:mac:x64": "npm run build && electron-packager . GoMaster --platform=darwin --arch=x64 --out=dist-electron-v074 --overwrite --extra-resource=../server.py --extra-resource=../src --extra-resource=../deps --extra-resource=../.env --extra-resource=dist --ignore=\"(dist|src|deps|server\\.py|__pycache__|node_modules/electron$|node_modules/electron-packager|dist-electron*)\""
+  },
+  "dependencies": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.4",
+    "electron": "^30.5.1",
+    "electron-packager": "^17.1.2",
+    "oxlint": "^1.75.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.2.0"
+  }
+}

@@ -13,4 +13,7 @@ __pycache__/
 .workbuddy/
 src/_*.py
 .env
+frontend/dist/
+frontend/dist-electron/
+frontend/dist-electron-*/
 

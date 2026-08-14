@@ -82,3 +82,51 @@ class Board:
                 row += "X" if c == 1 else ("O" if c == 2 else ".")
             rows.append(row)
         return rows
+
+
+def gtp_col_label(x: int) -> str:
+    """内部列索引 -> GTP 列字母（跳过 I）。x=0 -> 'A'，x=8 -> 'J'。"""
+    col_idx = x + 1 if x >= 8 else x
+    return chr(ord("A") + col_idx)
+
+
+def build_grid_from_moves(moves, size):
+    """moves: list of (color_char 'B'/'W', sgf_coord)。返回 Board。"""
+    b = Board(size)
+    for color, coord in moves:
+        xy = sgf_to_xy(coord, size)
+        if xy is None:
+            continue
+        b.set_stone(xy[0], xy[1], 1 if color == "B" else 2)
+    return b
+
+
+def board_to_ascii(moves, size, actual_sgf=None, best_sgf=None):
+    """把「某手落子前」的局面渲染成 ASCII 棋盘字符串，供 LLM 建立空间认知。
+
+    - 列标签 A..T（跳过 I）从左到右；行标签 1..size 从下到上（与 GTP 完全一致）。
+    - X=黑子，O=白子，.=空点。
+    - ◆ = 本手实际落子点（尚未落下）；★ = AI 推荐点。两者重合时显示 ★。
+    这样模型能直接读出「右上角」「三三」「小目」等方位，避免把变化图当事实。
+    """
+    b = build_grid_from_moves(moves, size)
+    actual_xy = sgf_to_xy(actual_sgf, size) if actual_sgf else None
+    best_xy = sgf_to_xy(best_sgf, size) if best_sgf else None
+
+    cols = [gtp_col_label(x) for x in range(size)]
+    # 顶部列标签（与棋盘宽度对齐：行号占 3 字符 + 空格 + 每列 2 字符）
+    header = "    " + " ".join(cols)
+    lines = [header]
+    for y in range(size):
+        row_num = size - y
+        cells = []
+        for x in range(size):
+            if best_xy and (x, y) == best_xy:
+                cells.append("★")          # AI 推荐点优先标记
+            elif actual_xy and (x, y) == actual_xy:
+                cells.append("◆")          # 实际落子点
+            else:
+                c = b.get(x, y)
+                cells.append("X" if c == 1 else ("O" if c == 2 else "."))
+        lines.append(f"{row_num:>3} " + " ".join(cells))
+    return "\n".join(lines)

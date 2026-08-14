@@ -70,3 +70,30 @@ python3 server.py
 - Mac 改完：`git add -A && git commit -m "..." && git push`
 - 回 Windows：`git pull` 即可拿到最新
 - 注意：权重和 KataGo 二进制**不进 git**，每台机器各自准备。
+
+## 六、桌面打包成 macOS 应用（Electron）
+
+代码已含 Electron 外壳（`frontend/electron/main.cjs` + `preload.cjs`），可打包成 `GoMaster.app` 双击运行。
+
+### 前置（前面已备好）
+- `deps/katago/katago`：**Mac 版** KataGo（无 `.exe` 后缀，eigenavx2 或 universal 构建）
+- `deps/` 下至少一个 g170 二进制权重（跨平台通用，可与 Windows 共用同一份 `.bin.gz`）
+- `.env`（DeepSeek Key）
+
+### 打包（必须在 Mac 上执行；沙箱 Windows 打不出 Mac 包）
+```bash
+cd frontend
+npm install                 # 装 electron/electron-packager + 前端依赖（Mac 有网正常）
+npm run build               # 构建前端 dist
+npm run electron:pack:mac   # 产出 dist-electron/GoMaster-darwin-arm64/GoMaster.app
+```
+> Intel Mac 请把脚本里 `--arch=arm64` 改成 `--arch=x64`；electron 二进制下载慢可先 `export ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"`。
+
+### 首次打开（Gatekeeper）
+未签名的 `.app` 会被拦（"无法验证开发者"）：
+1. 右键 `GoMaster.app` → 打开 → 弹窗点「打开」；或
+2. 终端 `xattr -cr "dist-electron/GoMaster-darwin-arm64/GoMaster.app"` 清除隔离属性后双击。
+自用无需 Apple 开发者证书与公证。
+
+### 运行原理
+`GoMaster.app/Contents/Resources/` 内含 `server.py`+`src`+`deps`+`.env`+`dist`，`main.cjs` 用 `python3` 拉起后端（Mac 探活顺序已含 `python3`）。
