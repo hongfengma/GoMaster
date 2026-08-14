@@ -111,6 +111,13 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/health":
             self._send(200, {"status": "ok"})
             return
+        if path == "/api/version":
+            self._send(200, {
+                "status": "ok",
+                "version": "0.7.5",
+                "cwd": os.getcwd(),
+            })
+            return
         if path.startswith("/api/analyze/"):
             task_id = path.rsplit("/", 1)[-1]
             with tasks_lock:

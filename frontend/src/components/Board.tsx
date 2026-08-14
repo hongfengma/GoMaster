@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAppStore } from "../store";
 import { coordToXY, drawBoard } from "../board-utils";
 import type { ReviewEntry, StoneColor } from "../types";
@@ -8,6 +8,7 @@ export default function Board() {
   const entries = useAppStore((s) => s.entries);
   const current = useAppStore((s) => s.current);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [, setTick] = useState(0);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -63,6 +64,18 @@ export default function Board() {
 
     drawBoard(ctx, { size, margin, cell, stones, highlight, pv });
   }, [size, entries, current]);
+
+  // 窗口大小变化时重绘棋盘，避免初始尺寸过小或用户拉伸后不变
+  useEffect(() => {
+    function onResize() {
+      if (!size) return;
+      // 通过强制更新触发上面的 useEffect 重新计算棋盘尺寸
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      setTick((t) => t + 1);
+    }
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [size]);
 
   if (size <= 0) return null;
   return <canvas ref={canvasRef} className="board-canvas" />;

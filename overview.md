@@ -1,49 +1,45 @@
-# 围棋教练 AI 复盘 · v0.7.1 交付总览
+# 围棋教练 AI 复盘 · v0.7.5 交付总览
 
-> 时间：2026-08-13  |  范围：本机实测交互 + Electron 桌面打包
+> 时间：2026-08-14  |  范围：本机实测交互 + Electron 桌面打包
 
-## 一、本机实测（接口/数据流级）
-沙箱无 GUI/浏览器，无法肉眼看 Canvas 渲染，故做**接口级端到端联调**：
+## 一、当前状态
 
-- 起 `server.py` 托管正式前端 `frontend/dist`：`GET /` 返回 React 版 index.html、`/assets` 200、`/api/health` ok。
-- 提交真实 `sample/9x9-demo.sgf`（9 路 20 手）跑完整分析：**KataGo 20 手全分析（~24s）、12 个失误手判定、DeepSeek 逐手讲解生成**。
-- **字段对齐验证**：API 返回 `ai_wr`/`actual_wr`/`best_pv_sgf`/`top3`/`phase`/`delta`/`explain` 与 `frontend/src/types.ts` 逐一吻合；`InfoPanel` 已优雅处理 `explain` 为空（小 delta 手不调 LLM，显示"该手暂无讲解"）。**前端能正确消费联调数据**。
+v0.7.5 已修复 v0.7.4 最顽固的「新 exe 仍显示旧界面」问题，核心改动是 **Electron 外壳自动检测并避开已被占用的 8765 端口**，同时棋盘新增窗口 resize 监听、后端新增 `/api/version` 用于调试。
 
-## 二、桌面打包（Electron，沙箱实测通过）
-**踩坑→破法**：`electron-packager` 默认从 GitHub 拉 electron 二进制 + 校验和，沙箱 GitHub 被掐 → 无限重试 8 分钟零产出。
-**解决**：打包前 `export ELECTRON_MIRROR="https://cdn.npmmirror.com/binaries/electron/"`（npmmirror 镜像可达，108MB zip HTTP 200）+ `--prune`，**9 秒完成**。
+## 二、v0.7.5 关键修复
 
-**产物**：`frontend/dist-electron/GoMaster-win32-x64/GoMaster.exe`（177MB，Windows 免安装包）
+1. **动态端口（根治旧后端残留）**
+   - `frontend/electron/main.cjs`：启动前先探测 8765 是否空闲；若被旧实例占用，自动递增到 8766/8767… 再启动新后端、从新端口加载前端。
+   - 这彻底避免了「新 exe 启动后仍连到旧后端、显示旧界面/旧坐标」的问题。
 
-**产物结构**：
-```
-GoMaster-win32-x64/
-├── GoMaster.exe            # 主程序
-└── resources/
-    ├── app/                # 前端（asar/目录）
-    ├── server.py           # Python 后端（开发态/打包态路径已适配）
-    ├── src/                # 分析引擎（KataGo+DeepSeek）
-    ├── deps/               # KataGo 二进制 + 权重
-    ├── dist/               # 前端构建产物（server 实际托管此目录）
-    └── .env                # DeepSeek Key（内嵌，仅限自用）
-```
+2. **棋盘响应式增强**
+   - `frontend/src/components/Board.tsx`：新增 `window.resize` 监听，窗口大小变化后自动重绘棋盘。
+   - 棋盘尺寸保持 `window.innerWidth * 0.6`，最小 600px，最大 860px。
 
-**关键修复**：
-1. `main.cjs` 的 `findPython()`：原用异步 `spawn` 探测（永远返回首选项），改为 `spawnSync` 同步探测，Windows 优先 `py` 启动器。
-2. 打包态路径：server.py 的 `DIST_DIR` 改相对自身；`config.py` 的 `DEPS` 改 `os.path.join(HERE,"..","deps")`，兼容开发态/打包态。
-3. `electron/` 外壳补"spawn 拉起后端 + 端口就绪检测 + 退出清理"逻辑。
+3. **后端版本标识**
+   - `server.py` 新增 `GET /api/version`，返回 `{version:"0.7.5", cwd:...}`，便于用户开 DevTools 确认连接的是哪个后端。
 
-**打包后后端冒烟测试通过**：cwd 切 `resources/` 跑 `server.py 8771` → `/api/health` 返回 ok，`GET /` 返回 React 页面，证明打包态下 dist 解析/.env 密钥/deps 路径全部正确。
+4. **代码层面坐标问题已确认修复**
+   - `src/review.py`：`actual` = 大写 GTP（如 `G7`），`actual_sgf` = SGF（如 `ge`）；`best` 同样 uppercase。
+   - 前端 `InfoPanel` / `MistakeList` 直接显示 `e.actual` / `e.best`。
+   - `Board.tsx` 用 `actual_sgf` 绘制棋子。
 
-## 三、遗留与注意事项
-- ⚠️ 沙箱无显示器，**Canvas 棋盘/讲解的视觉渲染需老马本机双击 exe 或 `npm run dev` 肉眼确认**。
-- ⚠️ exe 内嵌 `.env`（DeepSeek Key），**仅限自用，勿外发**。
-- ⚠️ 运行 exe 需本机装 **Python 3**（exe 经 py/python/python3 拉起后端，仅用标准库）。
-- 代码尚未推 GitHub（GoMaster/main 仍是 v0.6.5 旧版）；v0.7.1 的 frontend/Electron 改动待推，仍走 classic PAT + api.github.com 通道。
+## 三、产物
 
-## 四、交付文件
-- `frontend/dist-electron/GoMaster-win32-x64/` —— 可直接运行的桌面应用
-- `frontend/README.md` —— 开发/构建/打包完整命令（含国内镜像环境变量）
-- `frontend/electron/main.cjs` —— Electron 外壳（spawn 后端 + 端口检测）
-- `围棋教练AI方案.md` —— 已更新至 v0.7.1 状态
-- `server.py` / `src/config.py` —— 打包态路径适配
+- **Windows 免安装 exe**：`frontend/dist-electron-v075/GoMaster-win32-x64/GoMaster.exe`（约 177MB）
+- 运行前需本机已装 Python 3；exe 内嵌 `.env`（DeepSeek Key），**仅限自用，勿外发**。
+
+## 四、使用提醒
+
+- **只双击 `dist-electron-v075/.../GoMaster.exe`**。
+- 旧目录 `dist-electron/`、`dist-electron-v072/`、`dist-electron-v073/`、`dist-electron-v074/` 里的 exe 都不要点；建议本机删除这些旧目录。
+- v0.7.5 会自动换端口，无需手动结束旧进程；但为避免资源浪费，打开新 exe 前仍可手动关闭旧 GoMaster 窗口。
+- classic PAT 已在历史对话中泄露，强烈建议去 GitHub Settings → Developer settings → Personal access tokens 中 revoke。
+
+## 五、交付文件
+
+- `frontend/dist-electron-v075/GoMaster-win32-x64/GoMaster.exe`
+- `frontend/electron/main.cjs`
+- `frontend/src/components/Board.tsx`
+- `server.py`
+- `frontend/package.json`

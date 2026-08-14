@@ -9,13 +9,14 @@
 // 说明：Python 运行时依赖本机 PATH 中的 python（老马本机已具备）。
 // 打包后 server.py / src / deps / .env 通过 --extra-resource 放到 resources/ 下（asar 外，可写）。
 const { app, BrowserWindow, Menu } = require("electron");
-const { spawn } = require("child_process");
+const { spawn, spawnSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 const net = require("net");
 
-const SERVER_PORT = 8765;
-const SERVER_URL = `http://127.0.0.1:${SERVER_PORT}`;
+const DEFAULT_SERVER_PORT = 8765;
+let SERVER_PORT = DEFAULT_SERVER_PORT;
+let SERVER_URL = `http://127.0.0.1:${SERVER_PORT}`;
 
 let serverProc = null;
 
@@ -52,6 +53,20 @@ function findPython() {
   return "py"; // 兜底：交给系统报错提示
 }
 
+function isPortFree(port) {
+  return new Promise((resolve) => {
+    const sock = net.connect(port, "127.0.0.1");
+    sock.on("connect", () => {
+      sock.destroy();
+      resolve(false);
+    });
+    sock.on("error", () => {
+      sock.destroy();
+      resolve(true);
+    });
+  });
+}
+
 function waitPort(port, timeoutMs) {
   return new Promise((resolve, reject) => {
     const start = Date.now();
@@ -71,12 +86,29 @@ function waitPort(port, timeoutMs) {
   });
 }
 
+async function findFreePort(startPort, maxTry = 20) {
+  for (let p = startPort; p < startPort + maxTry; p++) {
+    if (await isPortFree(p)) return p;
+  }
+  throw new Error(`未找到可用端口（${startPort}~${startPort + maxTry - 1}）`);
+}
+
 async function startBackend() {
   const root = findServerRoot();
   if (!root) {
     console.error("[electron] 找不到 server.py，请确认打包资源完整");
     return;
   }
+
+  // 关键修复：如果 8765 已被旧实例占用，则换端口启动，避免连到旧后端/旧前端
+  const preferred = DEFAULT_SERVER_PORT;
+  SERVER_PORT = await findFreePort(preferred).catch((e) => {
+    console.error("[electron]", e.message);
+    return preferred;
+  });
+  SERVER_URL = `http://127.0.0.1:${SERVER_PORT}`;
+  console.log(`[electron] 选用端口: ${SERVER_PORT}`);
+
   const py = findPython();
   console.log(`[electron] 启动后端: ${py} server.py ${SERVER_PORT} (cwd=${root})`);
   serverProc = spawn(py, ["server.py", String(SERVER_PORT)], {
