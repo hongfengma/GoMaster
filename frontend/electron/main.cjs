@@ -111,9 +111,16 @@ async function startBackend() {
 
   const py = findPython();
   console.log(`[electron] 启动后端: ${py} server.py ${SERVER_PORT} (cwd=${root})`);
+  // Windows 中文系统默认控制台编码为 GBK，若 Python 输出含 ■/★/◆ 等 Unicode 会抛编码错误，
+  // 强制 Python 使用 UTF-8 读写 stdin/stdout/stderr。
+  const env = Object.assign({}, process.env, {
+    PYTHONIOENCODING: "utf-8",
+    PYTHONUTF8: "1",
+  });
   serverProc = spawn(py, ["server.py", String(SERVER_PORT)], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"],
+    env,
   });
   serverProc.stdout.on("data", (d) => console.log("[server]", d.toString().trim()));
   serverProc.stderr.on("data", (d) => console.error("[server-err]", d.toString().trim()));

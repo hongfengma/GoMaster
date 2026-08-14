@@ -12,11 +12,20 @@
 """
 import os
 import sys
+import io
 import json
 import threading
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
+
+# 强制 stdout/stderr 使用 UTF-8，避免 Windows GBK 控制台下输出 ★/◆/■ 等 Unicode 时报错。
+# 注意：必须在任何 print 之前执行。
+try:
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", line_buffering=True)
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", line_buffering=True)
+except Exception:
+    pass
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "src"))
@@ -114,7 +123,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/version":
             self._send(200, {
                 "status": "ok",
-                "version": "0.7.5",
+                "version": "0.7.6",
                 "cwd": os.getcwd(),
             })
             return

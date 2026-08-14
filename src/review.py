@@ -131,7 +131,7 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
             entries.append(entry)
             flag = " ⚠失误" if delta >= threshold else ""
             print(f"  第{i+1}手({color}): 实际 {actual_gtp} / 推荐 {best_gtp} | "
-                  f"胜率 {ai_wr*100:.1f}%→{actual_wr*100:.1f}% (Δ{delta*100:+.1f}%){flag}")
+                  f"胜率 {ai_wr*100:.1f}%→{actual_wr*100:.1f}% (差{delta*100:+.1f}%){flag}")
             if progress_cb:
                 progress_cb({"type": "move", "entry": dict(entry)})
     finally:
