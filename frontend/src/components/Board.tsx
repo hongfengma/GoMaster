@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useAppStore } from "../store";
-import { sgfToXY, drawBoard } from "../board-utils";
+import { coordToXY, drawBoard } from "../board-utils";
 import type { ReviewEntry, StoneColor } from "../types";
 
 export default function Board() {
@@ -12,9 +12,10 @@ export default function Board() {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || size <= 0) return;
-    const margin = 34;
-    const targetBoard = 720; // 期望棋盘边长（像素），在 1180px 容器下约占 60%
-    const maxCell = 64; // 单格上限，9 路棋盘也能较大
+    // 棋盘尺寸：尽量撑满左栏（占视口宽度 55%），但不小于 560px，不大于 820px
+    const targetBoard = Math.max(560, Math.min(820, Math.floor(window.innerWidth * 0.55)));
+    const margin = Math.max(30, Math.floor(targetBoard * 0.048));
+    const maxCell = Math.floor(targetBoard * 0.09);
     const cell = Math.min(maxCell, Math.floor((targetBoard - margin * 2) / (size - 1)));
     const boardPx = margin * 2 + cell * (size - 1);
     const dpr = window.devicePixelRatio || 1;
@@ -26,12 +27,12 @@ export default function Board() {
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // 重建第 1..current 手的棋子
+    // 重建第 1..current 手的棋子（优先用 SGF 坐标绘制，兼容旧数据）
     const stones: { x: number; y: number; color: StoneColor }[] = [];
     for (const e of entries as ReviewEntry[]) {
       if (e.no > current) break;
-      const xy = sgfToXY(e.actual, size);
-      if (xy && e.actual !== "PASS")
+      const xy = coordToXY(e.actual_sgf ?? e.actual, size);
+      if (xy)
         stones.push({ ...xy, color: e.color });
     }
 
@@ -43,12 +44,12 @@ export default function Board() {
     if (current >= 1) {
       const e = entries.find((x) => x.no === current);
       if (e) {
-        const ha = sgfToXY(e.actual, size);
-        if (ha && e.actual !== "PASS") highlight = ha;
+        const ha = coordToXY(e.actual_sgf ?? e.actual, size);
+        if (ha) highlight = ha;
         const seq = (e.best_pv_sgf || []).filter((c) => c && c !== "PASS");
         pv = seq
           .map((c, k) => {
-            const xy = sgfToXY(c, size);
+            const xy = coordToXY(c, size);
             if (!xy) return null;
             const isBlack = e.color === "B" ? k % 2 === 0 : k % 2 === 1;
             return { ...xy, isBlack, order: k + 1 };

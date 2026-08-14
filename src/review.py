@@ -116,10 +116,9 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
             entry = {
                 "no": i + 1,
                 "color": color,
-                "actual": actual_disp,        # SGF 坐标，供前端棋盘高亮绘制
-                "actual_gtp": actual_gtp,     # GTP 记号（如 Q16），供界面展示与讲解
-                "best": best_gtp,             # GTP 记号，兼容旧字段
-                "best_gtp": best_gtp,         # GTP 记号（如 Q16），供界面展示与讲解
+                "actual": actual_gtp,         # GTP 记号（如 D6），供界面展示与讲解（唯一显示字段）
+                "actual_sgf": actual_disp,    # SGF 坐标（如 dd），供前端棋盘高亮绘制
+                "best": best_gtp,             # GTP 记号（如 F6），供界面展示与讲解（唯一显示字段）
                 "best_sgf": best_sgf,         # SGF 坐标，供前端变化图绘制
                 "best_pv": best_pv,
                 "best_pv_sgf": best_pv_sgf,
@@ -240,7 +239,7 @@ def _build_report(meta, entries, mistakes, threshold, level, max_visits):
         lines.append(f"### 第 {e['no']} 手（{cn}方）\n")
         lines.append("| 项目 | 内容 |")
         lines.append("| --- | --- |")
-        lines.append(f"| 实际落子 | **{e.get('actual_gtp') or e['actual']}** |")
+        lines.append(f"| 实际落子 | **{e['actual']}** |")
         lines.append(f"| AI 推荐 | **{e['best']}** |")
         lines.append(f"| 胜率变化 | {e['ai_wr']*100:.1f}% → {e['actual_wr']*100:.1f}%"
                      f"（下降 {e['delta']*100:.1f} 个百分点） |")
@@ -258,7 +257,7 @@ def _build_report(meta, entries, mistakes, threshold, level, max_visits):
         cn = "黑" if e["color"] == "B" else "白"
         mark = "⚠" if e["delta"] >= threshold else ""
         lines.append(
-            f"| {e['no']} | {cn} | {e.get('actual_gtp') or e['actual']} | {e['best']} | "
+            f"| {e['no']} | {cn} | {e['actual']} | {e['best']} | "
             f"{e['ai_wr']*100:.1f}% | {e['actual_wr']*100:.1f}% | "
             f"{e['delta']*100:+.1f}% {mark} |"
         )

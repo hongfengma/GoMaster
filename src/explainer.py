@@ -24,9 +24,9 @@ except Exception:  # rag 模块缺失时优雅降级，不影响主流程
     _rag_retrieve = None
 
 
-def _call_deepseek(system: str, user: str, max_tokens=1500, temperature=0.6,
+def _call_deepseek(system: str, user: str, max_tokens=800, temperature=0.25,
                    retries=2):
-    """调用 DeepSeek。对空内容/瞬时错误自动重试，避免偶发空响应导致讲解缺失。"""
+    """调用 DeepSeek。对空内容/瞬时错误/非法坐标自动重试或抛异常，由上层 fallback。"""
     last_err = None
     for attempt in range(retries + 1):
         try:
@@ -58,6 +58,9 @@ def _call_deepseek(system: str, user: str, max_tokens=1500, temperature=0.6,
                 content = (msg.get("reasoning_content") or "").strip()
             if not content:
                 raise ValueError("DeepSeek 返回空内容（疑似偶发）")
+            # 坐标格式硬校验：不允许出现 ddd、qq、ehh、fch 等连续 2+ 位小写字母
+            if _has_bad_coords(content):
+                raise ValueError(f"DeepSeek 输出含非法坐标: {_bad_coord_samples(content)}")
             return content
         except Exception as e:
             last_err = e
@@ -65,6 +68,31 @@ def _call_deepseek(system: str, user: str, max_tokens=1500, temperature=0.6,
                 time.sleep(1.5 * (attempt + 1))
                 continue
     raise last_err
+
+
+def _has_bad_coords(text: str) -> bool:
+    """检测是否包含 dd、qq、ehh、fch 等非法坐标（连续 2+ 个小写字母）。"""
+    import re
+    # 匹配连续两个及以上小写字母，且不是英语常见短词（如 as/is 可放行，但围棋坐标不会单独出现）
+    for m in re.finditer(r"[a-z]{2,}", text):
+        w = m.group()
+        # 放行少量常见英文单词，其余视为非法坐标
+        if w in {"as", "is", "it", "of", "to", "in", "on", "at", "by", "for", "or", "if", "up", "so"}:
+            continue
+        return True
+    return False
+
+
+def _bad_coord_samples(text: str) -> str:
+    import re
+    samples = []
+    for m in re.finditer(r"[a-z]{2,}", text):
+        w = m.group()
+        if w not in {"as", "is", "it", "of", "to", "in", "on", "at", "by", "for", "or", "if", "up", "so"}:
+            samples.append(w)
+            if len(samples) >= 3:
+                break
+    return ",".join(samples) if samples else "(unknown)"
 
 
 def _fmt_pv(pv_gtp, n=6):
@@ -140,6 +168,9 @@ def explain_move(move_no, color_cn, actual_sgf, best_sgf,
         f"例如 Q16、D4、K10。你输出中提到的任何落点，都必须是这种格式。"
         f"绝对禁止输出 dd、qq、ddd、ehh、fch 等两位或三位小写字母串。"
         f"如果某个点在脑中是小写两位字母（如 dd），你必须先转换成 GTP（如 D4）再写。"
+        f"\n\n【正确示例】Q16、D6、F6、K10、A1、T19。"
+        f"【错误示例】dd、qq、ddd、ehh、fch。"
+        f"输出前请自检：每出现一次坐标，必须满足「首字符大写字母 A–T（跳 I）+ 数字」。"
     )
 
     board_block = (
@@ -176,7 +207,7 @@ def explain_move(move_no, color_cn, actual_sgf, best_sgf,
         user += f"\n\n【参考资料】（若与本题相关请引用，不相关则忽略）\n{rag_text}\n"
 
     try:
-        return _call_deepseek(system, user, max_tokens=1800, temperature=0.5)
+        return _call_deepseek(system, user, max_tokens=600, temperature=0.25)
     except Exception:
         return _fallback_explain(move_no, color_cn, actual_sgf, best_sgf,
                                  ai_wr, actual_wr, delta, size, phase=phase,

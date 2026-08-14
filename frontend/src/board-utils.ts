@@ -16,6 +16,28 @@ export function sgfToXY(coord: string, size: number): XY | null {
   return { x: c, y: r };
 }
 
+/** GTP 坐标（如 D6 / Q16）-> 内部 (x,y)。PASS/resign 返回 null。 */
+export function gtpToXY(coord: string, size: number): XY | null {
+  if (!coord || coord.toLowerCase() === "pass") return null;
+  const s = coord.trim();
+  const col = s.charAt(0).toUpperCase();
+  if (col < "A" || col > "T" || col === "I") return null;
+  let colIdx = col.charCodeAt(0) - 65; // A=0, B=1, ...
+  if (colIdx >= 8) colIdx -= 1; // 跳过 I
+  const rowNum = parseInt(s.slice(1), 10);
+  if (Number.isNaN(rowNum) || rowNum < 1 || rowNum > size) return null;
+  return { x: colIdx, y: size - rowNum };
+}
+
+/** 兼容 SGF（dd）或 GTP（D6）的坐标 -> 内部 (x,y)。 */
+export function coordToXY(coord: string | undefined, size: number): XY | null {
+  if (!coord || coord === "PASS") return null;
+  // 优先按 SGF 两位小写字母解析；失败再按 GTP 解析
+  let xy = sgfToXY(coord, size);
+  if (xy) return xy;
+  return gtpToXY(coord, size);
+}
+
 /** 列索引 -> 边线标签（跳过字母 I，符合标准记谱）。 */
 export function colLabel(i: number): string {
   return i < 8

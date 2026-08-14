@@ -29,7 +29,7 @@ export default function MistakeList() {
             onClick={() => goToMove(no)}
           >
             <span>
-              第 {no} 手（{cn}） 你:{e?.actual_gtp ?? e?.actual ?? "…"} → 推荐:{e?.best_gtp ?? e?.best ?? "…"}
+              第 {no} 手（{cn}） 你:{e?.actual ?? "…"} → 推荐:{e?.best ?? "…"}
             </span>
             <span className="delta">
               {e ? sign(e.delta) : "…"}

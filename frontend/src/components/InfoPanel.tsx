@@ -46,9 +46,9 @@ export default function InfoPanel() {
       </h3>
       <div className="kv">
         <span className="k">你的落子</span>
-        <span className="v">{e.actual_gtp ?? e.actual}</span>
+        <span className="v">{e.actual}</span>
         <span className="k">AI 推荐</span>
-        <span className="v best">{e.best_gtp ?? e.best}</span>
+        <span className="v best">{e.best}</span>
         <span className="k">胜率(推荐)</span>
         <span className="v">{pct(e.ai_wr)}</span>
         <span className="k">胜率(实际)</span>
