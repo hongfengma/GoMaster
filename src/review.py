@@ -91,10 +91,8 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
             top3 = []
             for info in infos[:3]:
                 tmv = info.get("move", "pass")
-                txy = gtp_to_xy(tmv, size)
-                tsgf = "PASS" if txy is None else xy_to_sgf(*txy)
                 top3.append({
-                    "move": tsgf,
+                    "move": tmv.upper(),      # GTP 记号（如 Q16），供讲解使用
                     "wr": _to_color_wr(info.get("winrate", 0.5), color) * 100,
                     "pv": info.get("pv", [])[:5],
                 })

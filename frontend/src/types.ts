@@ -1,7 +1,7 @@
 export type StoneColor = "B" | "W";
 
 export interface Top3Entry {
-  move: string; // SGF 坐标
+  move: string; // GTP 记号（如 Q16），供讲解展示
   wr: number; // 百分比数值
   pv: string[]; // GTP 坐标原始序列
 }
