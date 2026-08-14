@@ -9,18 +9,17 @@
 ## 一、把代码弄到 Mac
 
 ### 方式 A：GitHub（推荐，双向同步最方便）
-1. **Windows 本机（有网）** 推到 GitHub 私有仓库：
+1. **Windows 本机（有网）** 推到 GitHub 仓库（默认分支已是 `master`，即最新 v0.7.7）：
    ```bash
    cd "C:\Users\mhf\WorkBuddy\围棋教练AI复盘"
-   git remote add origin https://github.com/<你的用户名>/weiqi-coach.git
-   git branch -M main
-   git push -u origin main
+   git remote -v                      # 确认 origin 指向 GitHub 上的 GoMaster 仓库
+   git push -u origin master
    ```
-   `.gitignore` 已排除权重(`*.bin.gz`)、KataGo 二进制、上传文件等，只同步源码，仓库很小。
-2. **Mac 上** 克隆：
+   `.gitignore` 已排除权重(`*.bin.gz`)、KataGo 二进制、`.env`（含 DeepSeek Key）、上传文件等，只同步源码，仓库很小。
+2. **Mac 上** 克隆（默认分支即 `master`，落地即为 v0.7.7 最新版）：
    ```bash
-   git clone https://github.com/<你的用户名>/weiqi-coach.git
-   cd weiqi-coach
+   git clone https://github.com/hongfengma/GoMaster.git
+   cd GoMaster
    ```
 
 ### 方式 B：同步盘 / U 盘
@@ -42,7 +41,12 @@
    - `g170-b6c96-s175395328-d26788732.bin.gz`（极快，~3.6MB，棋力约业余初级）
      https://katagoarchive.org/g170/neuralnets/g170-b6c96-s175395328-d26788732.bin.gz
    - `config.py` 候选顺序：b10c128 → b6c96 → 你的 b10c384（兜底），自动优先选小的。
-4. **DeepSeek Key** 已在 `config.py` 内，Mac 端无需改动（确保 `api.deepseek.com` 出站可达）。
+4. **DeepSeek Key**：现已移出代码、改由 `.env` 读取（`.env` 已被 `.gitignore` 忽略，不会进仓库）。Mac 上克隆后需自行准备：
+   ```bash
+   cp .env.example .env
+   # 然后编辑 .env，把 DEEPSEEK_API_KEY= 填上你的真实 Key
+   ```
+   `.env.example` 是模板（已进仓库），`.env` 含真实 Key（仅本机、不提交）。
 
 ---
 
@@ -61,7 +65,7 @@ python3 server.py
 
 - **npm 本身没问题**：沙箱实测 `npm install react` 3 秒成功，registry 可达。
 - 之前"装不了 electron"是因其安装脚本要从 **GitHub 下载原生二进制**，而沙箱对 GitHub release 资产不可达；**Mac 本机有网可正常安装**。
-- 建议路径：Mac 上 `npm create vite@latest` 初始化 React 项目，把 `web/app.js` 的纯逻辑平移为 React 组件；后端 `server.py` 不动；最后用 Electron 套壳。
+- 前端代码已在 `frontend/`（Vite + React 19 + TypeScript + Zustand），**无需重建**：直接 `cd frontend && npm install && npm run dev` 即可本地调试；改完后用 `npm run electron:pack:mac` 重新打包（见第六节）。后端 `server.py` / `src/` 不动。
 
 ---
 
@@ -85,14 +89,16 @@ python3 server.py
 cd frontend
 npm install                 # 装 electron/electron-packager + 前端依赖（Mac 有网正常）
 npm run build               # 构建前端 dist
-npm run electron:pack:mac   # 产出 dist-electron/GoMaster-darwin-arm64/GoMaster.app
+npm run electron:pack:mac   # 默认打 Intel(x64) 包 → dist-electron-mac/GoMaster-darwin-x64/GoMaster.app
+# Apple 芯片(M1/M2/M3) 请改用：npm run electron:pack:mac:arm
 ```
-> Intel Mac 请把脚本里 `--arch=arm64` 改成 `--arch=x64`；electron 二进制下载慢可先 `export ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"`。
+> electron 原生二进制下载慢时，先执行：`export ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"`。
+> 打包会包含 `server.py`+`src`+`deps`+`.env`+`dist`；确保 Mac 本机 `deps/katago/katago`、`deps/*.bin.gz`、`.env` 已就位（详见第二节）。
 
 ### 首次打开（Gatekeeper）
 未签名的 `.app` 会被拦（"无法验证开发者"）：
 1. 右键 `GoMaster.app` → 打开 → 弹窗点「打开」；或
-2. 终端 `xattr -cr "dist-electron/GoMaster-darwin-arm64/GoMaster.app"` 清除隔离属性后双击。
+2. 终端 `xattr -cr "dist-electron-mac/GoMaster-darwin-x64/GoMaster.app"` 清除隔离属性后双击。
 自用无需 Apple 开发者证书与公证。
 
 ### 运行原理
