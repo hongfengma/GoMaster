@@ -123,7 +123,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/version":
             self._send(200, {
                 "status": "ok",
-                "version": "0.7.6",
+                "version": "0.7.7",
                 "cwd": os.getcwd(),
             })
             return
@@ -256,7 +256,7 @@ def main():
             pass
     httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     print(f"[服务] 围棋教练复盘服务已启动: http://127.0.0.1:{port}")
-    print(f"[服务] 前端目录: {WEB_DIR}")
+    print(f"[服务] 前端目录: {DIST_DIR} (exists={os.path.isdir(DIST_DIR)})")
     print(f"[服务] 按 Ctrl+C 停止")
     try:
         httpd.serve_forever()
