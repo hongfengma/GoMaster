@@ -79,7 +79,7 @@ def _analyze_cached(eng, moves, turn, size, komi, max_visits, nn_key,
 
 def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
                threshold=DEFAULT_THRESHOLD, level=USER_LEVEL,
-               progress_cb=None, user_cfg=None):
+               progress_cb=None, user_cfg=None, llm_verify=True):
     with open(sgf_path, "r", encoding="utf-8") as f:
         sgf_text = f.read()
 
@@ -286,6 +286,7 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
             board_ascii=board_ascii,
             fact_sheet=e.get("fact"),
             llm=llm_cfg,
+            verify=llm_verify,
         )
         if progress_cb:
             progress_cb({"type": "explain", "no": e["no"], "explain": e["explain"]})

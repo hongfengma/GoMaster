@@ -14,6 +14,7 @@ const EMPTY: UserConfig = {
   llm_base_url: "https://api.deepseek.com/v1",
   llm_api_key: "",
   llm_model: "deepseek-chat",
+  llm_verify: true,
 };
 
 export default function Settings({ onClose }: { onClose: () => void }) {
@@ -33,6 +34,8 @@ export default function Settings({ onClose }: { onClose: () => void }) {
   }, []);
 
   const set = (k: keyof UserConfig, v: string) =>
+    setCfg((c) => ({ ...c, [k]: v }));
+  const setBool = (k: keyof UserConfig, v: boolean) =>
     setCfg((c) => ({ ...c, [k]: v }));
 
   const onSave = async () => {
@@ -176,6 +179,15 @@ export default function Settings({ onClose }: { onClose: () => void }) {
               placeholder="deepseek-chat"
               onChange={(e) => set("llm_model", e.target.value)}
             />
+          </label>
+
+          <label className="toggle-row">
+            <input
+              type="checkbox"
+              checked={cfg.llm_verify}
+              onChange={(e) => setBool("llm_verify", e.target.checked)}
+            />
+            <span>启用 LLM 级事实校验（默认开，每失误手多一次 API 调用，更准但更慢）</span>
           </label>
 
           {msg && (

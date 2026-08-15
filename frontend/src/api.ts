@@ -40,6 +40,7 @@ export interface UserConfig {
   llm_base_url: string;
   llm_api_key: string;
   llm_model: string;
+  llm_verify: boolean;
   current_nn?: string;
 }
 

@@ -29,7 +29,10 @@ KEYS = (
     "llm_base_url",
     "llm_api_key",
     "llm_model",
+    "llm_verify",
 )
+# 布尔型字段：保存时不能按「空字符串」过滤
+BOOL_KEYS = {"llm_verify"}
 
 
 def _default_value():
@@ -51,6 +54,7 @@ def _default_value():
         "llm_base_url": "https://api.deepseek.com/v1",
         "llm_api_key": "",
         "llm_model": "deepseek-chat",
+        "llm_verify": True,
     }
 
 
@@ -64,7 +68,13 @@ def load():
             user = json.load(f)
         if not isinstance(user, dict):
             return defaults
-        return {k: user.get(k, defaults[k]) for k in KEYS}
+        out = {}
+        for k in KEYS:
+            if k in BOOL_KEYS:
+                out[k] = bool(user.get(k, defaults[k]))
+            else:
+                out[k] = user.get(k, defaults[k])
+        return out
     except Exception:
         return defaults
 
@@ -72,8 +82,13 @@ def load():
 def save(cfg: dict):
     """保存用户配置（仅持久化 KEYS 中的键）。"""
     os.makedirs(CONFIG_DIR, exist_ok=True)
-    merged = {k: (cfg.get(k) or "") for k in KEYS}
-    # 过滤空值（空字符串视为「使用默认」）
+    merged = {}
+    defaults = _default_value()
+    for k in KEYS:
+        if k in BOOL_KEYS:
+            merged[k] = bool(cfg.get(k, defaults[k]))
+        else:
+            merged[k] = cfg.get(k) or ""
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(merged, f, ensure_ascii=False, indent=2)
     return load()

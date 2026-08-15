@@ -145,24 +145,32 @@ def _classify_corner_stone(rx, ry):
 
 
 def _relation_name(dx, dy):
-    """由挂角方相对角部首子的偏移，命名挂角关系。"""
+    """由挂角方相对角部首子的偏移，命名挂角关系（符合中文围棋术语习惯）。
+
+    以 4-4 星位为例（dx/dy 指向棋盘内侧）：
+      (1,1)=小尖挂  (1,2)=小飞挂  (1,3)=一间高挂
+      (2,2)=二间高挂  (2,3)=大飞挂
+      (1,0)=一间低挂  (2,0)=二间低挂  (3,0)=三间低挂
+    """
     adx, ady = abs(dx), abs(dy)
     if adx == 0 and ady == 0:
         return ""
-    if adx <= 1 and ady <= 1:
-        if adx == 1 and ady == 1:
-            return "小尖挂"
-        return "一间低挂"
+    if adx == 1 and ady == 1:
+        return "小尖挂"
     if (adx == 1 and ady == 2) or (adx == 2 and ady == 1):
+        return "小飞挂"
+    if (adx == 1 and ady == 3) or (adx == 3 and ady == 1):
         return "一间高挂"
     if adx == 2 and ady == 2:
+        return "二间高挂"
+    if (adx == 2 and ady == 3) or (adx == 3 and ady == 2):
         return "大飞挂"
+    if adx == 1 and ady == 0 or adx == 0 and ady == 1:
+        return "一间低挂"
     if (adx == 2 and ady == 0) or (adx == 0 and ady == 2):
         return "二间低挂"
-    if (adx == 0 and ady == 3) or (adx == 3 and ady == 0):
-        return "二间高挂"
-    if (adx == 1 and ady == 3) or (adx == 3 and ady == 1):
-        return "三间高挂"
+    if (adx == 3 and ady == 0) or (adx == 0 and ady == 3):
+        return "三间低挂"
     return "远夹/拆逼"
 
 
@@ -170,15 +178,15 @@ def _relation_name(dx, dy):
 # 坐标约定：dx/dy 均指向棋盘内侧（远离角点方向），允许 0；对称型请同时列出两种朝向。
 _JOSEKI_LIBRARY = {
     # 星位体系
-    ("星位(4-4)", "一间低挂"): {
+    ("星位(4-4)", "小飞挂"): {  # 即 keima (1,2) / (2,1)
         (1, 1), (2, 0), (0, 2), (2, 1), (1, 2),
         (3, 0), (0, 3), (3, 1), (1, 3), (2, 2),
     },
-    ("星位(4-4)", "一间高挂"): {
+    ("星位(4-4)", "一间高挂"): {  # (1,3) / (3,1)
         (1, 1), (2, 0), (0, 2), (2, 2), (3, 1),
         (1, 3), (3, 2), (2, 3), (1, -1), (-1, 1),
     },
-    ("星位(4-4)", "大飞挂"): {
+    ("星位(4-4)", "大飞挂"): {  # (2,3) / (3,2)
         (1, 1), (2, 0), (0, 2), (3, 1), (1, 3),
         (3, 2), (2, 3), (3, 3), (2, 2), (1, -1), (-1, 1),
     },
@@ -186,9 +194,13 @@ _JOSEKI_LIBRARY = {
         (2, 0), (0, 2), (2, 1), (1, 2), (2, 2),
         (3, 0), (0, 3), (1, 1),
     },
-    ("星位(4-4)", "二间低挂"): {
+    ("星位(4-4)", "二间低挂"): {  # (2,0) / (0,2)
         (1, 1), (3, 0), (0, 3), (2, 1), (1, 2),
         (3, 1), (1, 3), (2, 2), (2, 0), (0, 2),
+    },
+    ("星位(4-4)", "二间高挂"): {  # (2,2)
+        (1, 1), (2, 0), (0, 2), (2, 1), (1, 2),
+        (3, 0), (0, 3), (3, 1), (1, 3), (2, 2),
     },
     # 小目体系
     ("小目(3-4)", "一间低挂"): {
@@ -339,6 +351,48 @@ def _detect_joseki(moves, upto_i, size, actual_xy):
 # ---------------------------------------------------------------------------
 # ④ 失误分类（方向 / 死活 / 官子 / 棋形 / 定式偏离）
 # ---------------------------------------------------------------------------
+def _detect_connection(grid_after, x, y, size, color):
+    """判断一手棋是否具有「连接/补断/边线」特征。
+
+    返回 dict：
+      - on_edge_12: 是否落在一/二线（距边 ≤1）
+      - connects_groups: 是否把原本不相连的己方两块连起来（补断/联络）
+      - neighbor_groups: 落子前邻接的己方棋群数量
+      - note: 简短中文说明
+    """
+    result = {
+        "on_edge_12": False,
+        "connects_groups": False,
+        "neighbor_groups": 0,
+        "note": "",
+    }
+    if x is None or y is None or color not in (1, 2):
+        return result
+
+    # 一/二线判定
+    edge_dist = min(x, y, size - 1 - x, size - 1 - y)
+    result["on_edge_12"] = edge_dist <= 1
+
+    # 临时移除本手棋子，看在没这一手时正交相邻有几块己方棋群
+    tmp = [row[:] for row in grid_after]
+    tmp[y][x] = 0
+    seen_groups = set()
+    for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+        if 0 <= nx < size and 0 <= ny < size and tmp[ny][nx] == color:
+            stones, _ = group_and_liberties(tmp, nx, ny, size)
+            key = tuple(sorted(stones))
+            if key not in seen_groups:
+                seen_groups.add(key)
+    result["neighbor_groups"] = len(seen_groups)
+    # 正交连接了 2 块及以上 → 补断/联络
+    if len(seen_groups) >= 2:
+        result["connects_groups"] = True
+        result["note"] = "补断/联络"
+    elif result["on_edge_12"]:
+        result["note"] = "一二线边线"
+    return result
+
+
 def _classify_mistake(fact, grid_after, size, actual_xy, best_xy, unsettled):
     """为当前失误手打一个主要分类标签。"""
     jt = fact.get("joseki") or {}
@@ -446,6 +500,11 @@ def fact_to_text(fact):
         lines.append(f"- 走势：{ctx['recent_trend']}")
     if ctx.get("unsettled_groups"):
         lines.append(f"- 未安定大龙：{ctx['unsettled_groups']} 块（注意战斗）")
+    conn = fact.get("connection") or {}
+    if conn.get("connects_groups"):
+        lines.append("- 联络特征：本手连接了己方两块棋，具有补断/联络作用，不可描述为「隔离/分断」")
+    if conn.get("on_edge_12"):
+        lines.append("- 边线提示：本手落在一/二线，属于靠近边线/底线，必须描述为「边线」「一二线」或「靠近边」，绝不可说「中腹」")
     if fact.get("category"):
         lines.append(f"- 失误分类：{fact['category']}")
     if fact.get("pv"):
@@ -453,7 +512,11 @@ def fact_to_text(fact):
     lines.append(
         "【坐标铁律】讲解中引用的任何坐标，必须是本事实单里列出的坐标，"
         "或当前手实际/推荐点。禁止凭空编造坐标；第四线及以下为边/角，"
-        "第五线及以上为中腹。"
+        "第五线及以上为中腹；一二线必须描述为边线/底线，不能叫中腹。"
+    )
+    lines.append(
+        "【禁止误判】若事实单写明「补断/联络」，你绝不可把本手讲成「隔离」「分断」「切断」对方；"
+        "若写明「边线提示」，必须承认它靠近边线。"
     )
     return "\n".join(lines)
 
@@ -500,6 +563,14 @@ def extract_fact(moves, i, size, komi, color, actual_gtp, best_gtp,
 
     joseki = _detect_joseki(moves, i, size, actual_xy)
 
+    # 连接/补断/边线特征（帮助 LLM 避免把 S14 这样的补断说成「隔离」）
+    color_num = 1 if color == "B" else 2
+    connection = _detect_connection(
+        grid_after, actual_xy[0], actual_xy[1], size, color_num) if actual_xy else {
+        "on_edge_12": False, "connects_groups": False,
+        "neighbor_groups": 0, "note": ""
+    }
+
     ctx = _strategic_context(
         moves, i, size, grid_after, score_lead, unsettled, er, winrates)
 
@@ -529,6 +600,7 @@ def extract_fact(moves, i, size, komi, color, actual_gtp, best_gtp,
         "shape_stones": shape_stones_gtp,
         "joseki": joseki,
         "category": category,
+        "connection": connection,
         "strategic_context": ctx,
         "pv": pv,
     }

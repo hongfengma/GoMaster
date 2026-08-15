@@ -12,10 +12,10 @@ function tagsForEntry(e: ReviewEntry | undefined, size: number): BoardTag[] {
   const xy = coordToXY(e.actual_sgf ?? e.actual, size);
   if (!xy) return [];
   const tags: BoardTag[] = [];
-  // 优先显示坏形、定式偏离、分类，最多 3 个避免过度遮挡
+  // 优先显示坏形、定式偏离、分类，最多 2 个避免遮挡棋子
   const src = (e.fact_tags || []).slice();
   if (e.category && !src.includes(e.category)) src.unshift(e.category);
-  for (const text of src.slice(0, 3)) {
+  for (const text of src.slice(0, 2)) {
     let kind: BoardTag["kind"] = "category";
     if (BAD_SHAPE_RE.test(text)) kind = "bad";
     else if (JOSEKI_RE.test(text)) kind = "joseki";

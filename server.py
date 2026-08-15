@@ -115,7 +115,7 @@ def _test_llm(llm: dict):
     return {"ok": False, "error": "响应缺少 choices 字段（检查模型名 / 接口路径 / Key）"}
 
 
-def run_task(task_id, sgf_path, visits, threshold, level):
+def run_task(task_id, sgf_path, visits, threshold, level, llm_verify=True):
     """后台线程：跑完整复盘，通过 progress_cb 把数据写回 tasks[task_id]。"""
 
     def cb(event):
@@ -143,7 +143,8 @@ def run_task(task_id, sgf_path, visits, threshold, level):
         tasks[task_id]["status"] = "running"
     try:
         run_review(sgf_path, max_visits=visits, threshold=threshold,
-                   level=level, progress_cb=cb, user_cfg=load_usercfg())
+                   level=level, progress_cb=cb, user_cfg=load_usercfg(),
+                   llm_verify=llm_verify)
     except Exception as e:
         with tasks_lock:
             tasks[task_id]["status"] = "error"
@@ -182,7 +183,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/version":
             self._send(200, {
                 "status": "ok",
-                "version": "1.1.0",
+                "version": "1.1.1",
                 "cwd": os.getcwd(),
             })
             return
@@ -318,6 +319,8 @@ class Handler(BaseHTTPRequestHandler):
         visits = int(body.get("visits", DEFAULT_MAX_VISITS))
         threshold = float(body.get("threshold", DEFAULT_THRESHOLD))
         level = body.get("level", USER_LEVEL)
+        user_cfg = load_usercfg()
+        llm_verify = bool(user_cfg.get("llm_verify", True))
 
         with tasks_lock:
             tasks[task_id] = {
@@ -331,7 +334,8 @@ class Handler(BaseHTTPRequestHandler):
                 "created_at": __import__("datetime").datetime.now().isoformat(),
             }
         t = threading.Thread(
-            target=run_task, args=(task_id, sgf_path, visits, threshold, level),
+            target=run_task,
+            args=(task_id, sgf_path, visits, threshold, level, llm_verify),
             daemon=True,
         )
         t.start()

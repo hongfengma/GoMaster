@@ -475,6 +475,18 @@ body {
   color: var(--text);
   font-size: 13px;
 }
+.modal-body .toggle-row {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+.modal-body .toggle-row input[type="checkbox"] {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
 .field-hint {
   display: block;
   margin-top: 2px;

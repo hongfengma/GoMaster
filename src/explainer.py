@@ -182,6 +182,10 @@ def verify_explain(text, fact_sheet):
     if phase == "官子" and "战斗" in text and "收官" not in text and "官子" not in text:
         warns.append("事实单判定本手处于官子阶段，文中提及战斗但未见收官表述，请确认")
 
+    conn = fact_sheet.get("connection") or {}
+    if conn.get("connects_groups") and any(k in text for k in ("隔离", "分断", "切断", "断开")):
+        warns.append("事实单显示本手为补断/联络，文中却用「隔离/分断/切断」，请以事实单为准")
+
     return warns
 
 
@@ -233,7 +237,7 @@ def verify_and_correct(content, fact_sheet, llm=None):
 def explain_move(move_no, color_cn, actual_sgf, best_sgf,
                  ai_wr, actual_wr, delta, best_pv_gtp, size,
                  recent_moves_sgf, level=USER_LEVEL, top3=None, phase="中盘",
-                 board_ascii=None, fact_sheet=None, llm=None):
+                 board_ascii=None, fact_sheet=None, llm=None, verify=True):
     """生成单手复盘讲解文本（结构化 Markdown，准确性优先）。
 
     参数说明：
@@ -286,17 +290,21 @@ def explain_move(move_no, color_cn, actual_sgf, best_sgf,
         f"3. 若引用定式、棋谚或棋形：必须来自公认棋理或下方【参考资料】/【事实单】，"
         f"并说明它在本局面如何体现；不得凭空杜撰名称。若你不确定某条棋理是否适用，"
         f"必须在「不确定点」里明说，或写「此处建议摆谱验证」，绝不可含糊带过。\n"
-        f"4. 描述落点时务必使用方位词（左上/右上/左下/右下/星位/小目/三三/边上/中腹）。\n"
+        f"4. 描述落点时务必使用方位词（左上/右上/左下/右下/星位/小目/三三/边上/中腹/一二线）。\n"
         f"区域定义以事实单为准：第四线及以下为「角部」或「边上」，第五线及以上才称「中腹」；"
-        f"严禁把四线棋子描述成中腹。\n"
+        f"一二线必须描述为「边线」「底线」或「靠近边线」，绝不可说成中腹。"
+        f"严禁把四线或更低线的棋子描述成中腹。\n"
         f"5. 若下方出现【事实单】，其内容为程序对棋盘的确定性计算结果"
-        f"（阶段/棋形/定式/形势/涉及坐标/后续主变），你必须以其为准；"
+        f"（阶段/棋形/定式/形势/涉及坐标/后续主变/联络特征/边线提示），你必须以其为准；"
         f"事实单未提及的棋理、定式、棋形名称、具体坐标不得自行断言。"
         f"讲解中引用的任何坐标，必须来自事实单里的「涉及坐标」「角部已落子」或「实际/推荐点」；"
         f"禁止凭空编造坐标，禁止把变化图里的坐标当作已落下的子来引用。\n"
-        f"6. 输出必须严格按下列 5 个 Markdown 标题分段，不要增减段落：\n"
+        f"6. 若事实单写明「补断/联络」，本手具有连接己方棋块的作用，"
+        f"你绝不可把它讲成「隔离」「分断」「切断」对方；"
+        f"若事实单写明「边线提示」，必须承认它靠近边线，不可说其深入中腹。\n"
+        f"7. 输出必须严格按下列 5 个 Markdown 标题分段，不要增减段落：\n"
         f"### 问题定性\n### 关键棋理\n### 推荐点意图\n### 后续推演\n### 不确定点\n"
-        f"7. 全程使用 Markdown（**加粗**、列表），总篇幅控制在 280 字以内。\n\n"
+        f"8. 全程使用 Markdown（**加粗**、列表），总篇幅控制在 280 字以内。\n\n"
         f"【坐标铁律】本系统所有坐标均采用 GTP 记号：1 个大写英文字母 + 1–2 位数字，"
         f"例如 Q16、D4、K10。你输出中提到的任何落点，都必须是这种格式。"
         f"绝对禁止输出 dd、qq、ddd、ehh、fch 等两位或三位小写字母串。"
@@ -329,8 +337,9 @@ def explain_move(move_no, color_cn, actual_sgf, best_sgf,
         f"【AI 推荐后续变化（仅是推演，不是已经下的子）】{best_sgf} → {pv_str}\n\n"
         f"请严格按下列要求讲解（Markdown，280 字以内，5 段结构）：\n"
         f"### 问题定性\n实际这手（{actual_sgf}）的问题具体是什么"
-        f"（子力重复/方向偏差/忽视弱棋/被抢要点/死活误判/官子损目/孤棋未安顿…）？"
-        f"结合盘面方位（如「右上角」「左边星位」「三三」「小目」「中腹」）与棋形说清。\n"
+        f"（子力重复/方向偏差/忽视弱棋/被抢要点/死活误判/官子损目/孤棋未安顿/联络/补断…）？"
+        f"结合盘面方位（如「右上角」「左边星位」「三三」「小目」「中腹」「一二线边线」）与棋形说清；"
+        f"若事实单提示「补断/联络」或「边线提示」，必须体现，不可反说。\n"
         f"### 关键棋理\n点出本局面相关的 1–2 条棋理/定式/棋形/棋谚，并说明它在此处如何体现；"
         f"若下方【参考资料】中有相关条目，优先引用并注明。\n"
         f"### 推荐点意图\n{best_sgf} 实现了什么意图"
@@ -358,7 +367,8 @@ def explain_move(move_no, color_cn, actual_sgf, best_sgf,
             content = content.rstrip() + "\n\n> 系统校验提示：" + "；".join(warns)
 
     # LLM 级审核：多花一次调用，专门揪坐标/区域/变化图等细节矛盾
-    if fact_sheet:
+    # 用户可在设置中关闭以节省耗时（每失误手省一次 API 调用）。
+    if fact_sheet and verify:
         content = verify_and_correct(content, fact_sheet, llm=llm)
         # 再次轻量规则校验，防止修正后仍留痕
         warns2 = verify_explain(content, fact_sheet)

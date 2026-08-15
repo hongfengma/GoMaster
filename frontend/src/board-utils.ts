@@ -207,36 +207,42 @@ export function drawBoard(ctx: CanvasRenderingContext2D, d: DrawData): void {
   }
 
   // 事实标签：画在实际落子附近，颜色按 kind 区分
+  // 设计目标：不遮挡棋子 → 标签放在棋子右上方、背景半透明、字体缩小
   if (d.tags && d.tags.length) {
-    const tagHeight = Math.max(14, Math.floor(d.cell * 0.30));
-    const fontSize = Math.max(10, Math.floor(d.cell * 0.20));
-    const padX = Math.floor(d.cell * 0.10);
-    const offsetX = d.cell * 0.42;
-    const offsetY = -d.cell * 0.50;
-    const lineGap = tagHeight + 2;
+    const tagHeight = Math.max(12, Math.floor(d.cell * 0.22));
+    const fontSize = Math.max(9, Math.floor(d.cell * 0.16));
+    const padX = Math.floor(d.cell * 0.08);
+    const stoneR = d.cell * 0.42;
+    // 从棋子中心向右上方偏移，避免覆盖棋子本体
+    const offsetX = stoneR + d.cell * 0.08;
+    const offsetY = -(stoneR + d.cell * 0.08);
+    const lineGap = tagHeight + 3;
 
-    ctx.font = `bold ${fontSize}px var(--sans), sans-serif`;
+    ctx.font = `bold ${fontSize}px var(--sans), system-ui, sans-serif`;
     ctx.textBaseline = "middle";
 
     d.tags.forEach((t, idx) => {
       const bx = d.margin + t.x * d.cell;
       const by = d.margin + t.y * d.cell;
       const tx = bx + offsetX;
-      const ty = by + offsetY + idx * lineGap;
+      const ty = by + offsetY - idx * lineGap;
 
       const color =
         t.kind === "bad"
-          ? "#c62828"
+          ? "#b71c1c"
           : t.kind === "joseki"
-          ? "#2e7d32"
-          : "#1565c0";
+          ? "#1b5e20"
+          : "#0d47a1";
       const textW = ctx.measureText(t.text).width;
       const w = textW + padX * 2;
       const h = tagHeight;
-      const x0 = tx - padX;
+      const x0 = tx;
       const y0 = ty - h / 2;
-      const r = 4;
+      const r = 3;
 
+      // 半透明背景 + 细边框，降低对棋盘的遮挡
+      ctx.save();
+      ctx.globalAlpha = 0.78;
       ctx.fillStyle = color;
       ctx.beginPath();
       ctx.moveTo(x0 + r, y0);
@@ -250,10 +256,29 @@ export function drawBoard(ctx: CanvasRenderingContext2D, d: DrawData): void {
       ctx.quadraticCurveTo(x0, y0, x0 + r, y0);
       ctx.closePath();
       ctx.fill();
+      ctx.restore();
+
+      // 边框（不透明，勾勒边界）
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x0 + r, y0);
+      ctx.lineTo(x0 + w - r, y0);
+      ctx.quadraticCurveTo(x0 + w, y0, x0 + w, y0 + r);
+      ctx.lineTo(x0 + w, y0 + h - r);
+      ctx.quadraticCurveTo(x0 + w, y0 + h, x0 + w - r, y0 + h);
+      ctx.lineTo(x0 + r, y0 + h);
+      ctx.quadraticCurveTo(x0, y0 + h, x0, y0 + h - r);
+      ctx.lineTo(x0, y0 + r);
+      ctx.quadraticCurveTo(x0, y0, x0 + r, y0);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.restore();
 
       ctx.fillStyle = "#fff";
       ctx.textAlign = "left";
-      ctx.fillText(t.text, tx, ty);
+      ctx.fillText(t.text, tx + padX, ty);
     });
   }
 }
