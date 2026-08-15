@@ -6,9 +6,9 @@ contextBridge.exposeInMainWorld("appInfo", {
   platform: process.platform,
 });
 
-// 导出报告为 PDF：把报告 HTML + 样式字符串交由主进程生成并存盘
+// 导出报告为 PDF：把报告各区块截图（PNG dataURL 数组）交由主进程拼成图片 PDF 并存盘
 contextBridge.exposeInMainWorld("electronAPI", {
-  exportReportPDF: (html, css) =>
-    ipcRenderer.invoke("export-report-pdf", { html, css }),
+  exportReportPDF: (images) =>
+    ipcRenderer.invoke("export-report-pdf", { images }),
   selectWeightFile: () => ipcRenderer.invoke("select-weight-file"),
 });

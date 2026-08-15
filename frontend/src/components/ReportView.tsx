@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import html2canvas from "html2canvas";
 import { useAppStore } from "../store";
 import { coordToXY, drawBoard } from "../board-utils";
 import MarkdownView from "./MarkdownView";
@@ -67,30 +68,50 @@ export default function ReportView({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setMsg(null);
     try {
-      // 把 canvas 图例转成 base64 图片，避免 innerHTML 序列化丢失位图
-      const clone = reportRef.current.cloneNode(true) as HTMLElement;
-      clone.querySelectorAll("canvas").forEach((c) => {
-        const cv = c as HTMLCanvasElement;
-        const img = document.createElement("img");
-        img.src = cv.toDataURL("image/png");
-        img.style.width = cv.style.width;
-        img.style.height = cv.style.height;
-        cv.parentNode?.replaceChild(img, cv);
-      });
-      const html = clone.innerHTML;
-      const css = Array.from(document.querySelectorAll("style"))
-        .map((s) => s.textContent || "")
-        .join("\n");
-
       const api = (window as any).electronAPI;
-      if (api && api.exportReportPDF) {
-        const r = await api.exportReportPDF(html, css);
-        if (r.ok) setMsg(`已导出 PDF：${r.path || ""}`);
-        else setMsg(`导出失败：${r.error || "未知错误"}`);
-      } else {
+      if (!api || !api.exportReportPDF) {
         // 非 Electron 环境（纯 web 模式）：调用浏览器打印，用户另存为 PDF
         window.print();
+        return;
       }
+      // 把整份报告（含 canvas 棋盘图例 + Markdown 讲解）截成一张长图，
+      // 再按 A4 比例切成多页 PNG，交由主进程拼成「图片版 PDF」（不依赖字体，任意阅读器可看）。
+      const modal = reportRef.current;
+      const canvas = await html2canvas(modal, {
+        scale: 2,
+        backgroundColor: "#ffffff",
+        useCORS: true,
+        logging: false,
+        ignoreElements: (el) =>
+          el instanceof HTMLElement && el.classList.contains("no-print"),
+      });
+      const A4_W = 595.28, A4_H = 841.89, M = 28;
+      const cW = A4_W - M * 2, cH = A4_H - M * 2;
+      const scale = cW / canvas.width; // px → pt（以宽对齐）
+      const pageHpx = cH / scale;
+      const pages: string[] = [];
+      let y = 0;
+      while (y < canvas.height) {
+        const sliceH = Math.min(pageHpx, canvas.height - y);
+        const tmp = document.createElement("canvas");
+        tmp.width = canvas.width;
+        tmp.height = Math.ceil(sliceH);
+        const ctx = tmp.getContext("2d");
+        if (ctx) {
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, tmp.width, tmp.height);
+          ctx.drawImage(
+            canvas,
+            0, y, canvas.width, sliceH,
+            0, 0, canvas.width, sliceH
+          );
+        }
+        pages.push(tmp.toDataURL("image/png"));
+        y += sliceH;
+      }
+      const r = await api.exportReportPDF(pages);
+      if (r.ok) setMsg(`已导出 PDF：${r.path || ""}`);
+      else setMsg(`导出失败：${r.error || "未知错误"}`);
     } catch (e) {
       setMsg(`导出出错：${e instanceof Error ? e.message : String(e)}`);
     } finally {

@@ -172,53 +172,48 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-// 导出报告为 PDF：由渲染进程把「报告 HTML（canvas 已转 base64 图片）+ 样式」传过来，
-// 主进程用临时隐藏窗口加载该 HTML 后 printToPDF 存盘。比浏览器 print() 更干净（仅含报告内容）。
-ipcMain.handle("export-report-pdf", async (_evt, { html, css }) => {
-  let win = null;
+// 导出报告为 PDF：渲染进程已把报告各区块截成 PNG（dataURL 数组）传过来，
+// 主进程用 pdf-lib 将这些图按比例拼成「图片版 A4 PDF」。
+// 关键：图片 PDF 不依赖任何系统字体，因此在 Adobe Reader 等任意阅读器里都能正常查看，
+// 彻底规避 Chromium printToPDF 不嵌入中文字体导致阅读器空白的问题。
+ipcMain.handle("export-report-pdf", async (_evt, { images }) => {
   try {
-    win = new BrowserWindow({
-      show: false,
-      width: 1200,
-      height: 1600,
-      webPreferences: { contextIsolation: false, nodeIntegration: false },
-    });
-    const full =
-      `<!doctype html><html><head><meta charset="utf-8">` +
-      `<style>${css || ""}</style></head><body>${html || ""}</body></html>`;
-    await new Promise((resolve, reject) => {
-      win.webContents.once("did-finish-load", resolve);
-      win.webContents.once("did-fail-load", (e, code, desc) => reject(new Error(desc || code)));
-      win.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(full));
-    });
-    // 等待内联 base64 图片解码渲染完成
-    await new Promise((r) => setTimeout(r, 350));
-    // pageSize 用微米对象可避免部分 Electron 版本字符串解析失败；
-    // margins 置 0 消除 "margins must be <= pageSize" 的校验失败。
-    const buf = await win.webContents.printToPDF({
-      printBackground: true,
-      landscape: false,
-      pageSize: { width: 210000, height: 297000 },
-      margins: { top: 0, bottom: 0, left: 0, right: 0 },
-    });
+    if (!images || !images.length) return { ok: false, error: "没有可导出的报告内容" };
+    const { PDFDocument } = require("pdf-lib");
+    const pdf = await PDFDocument.create();
+    const A4 = [595.28, 841.89]; // A4 单位 pt
+    const M = 28; // 页边距 pt
+    const cW = A4[0] - M * 2;
+    const cH = A4[1] - M * 2;
+    for (const dataUrl of images) {
+      try {
+        const b64 = String(dataUrl).split(",")[1] || "";
+        const png = await pdf.embedPng(Buffer.from(b64, "base64"));
+        const page = pdf.addPage(A4);
+        const iw = png.width, ih = png.height;
+        const s = Math.min(cW / iw, cH / ih);
+        const w = iw * s, h = ih * s;
+        page.drawImage(png, {
+          x: M + (cW - w) / 2,
+          y: M + (cH - h) / 2,
+          width: w,
+          height: h,
+        });
+      } catch (e) {
+        console.error("[export-pdf] 单张图处理失败:", e);
+      }
+    }
+    const buf = await pdf.save();
     const { canceled, filePath } = await dialog.showSaveDialog({
       title: "保存复盘报告",
       defaultPath: "围棋复盘报告.pdf",
       filters: [{ name: "PDF", extensions: ["pdf"] }],
     });
-    if (canceled || !filePath) {
-      return { ok: true, path: "" }; // 用户取消，不视为错误
-    }
+    if (canceled || !filePath) return { ok: true, path: "" };
     require("fs").writeFileSync(filePath, buf);
     return { ok: true, path: filePath };
   } catch (e) {
     return { ok: false, error: String(e && e.message ? e.message : e) };
-  } finally {
-    if (win) {
-      try {
-        win.destroy();
-      } catch (_) {}
-    }
   }
 });
 
