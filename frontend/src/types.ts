@@ -21,6 +21,7 @@ export interface ReviewEntry {
   ai_wr: number; // 0..1，落子方视角
   actual_wr: number; // 0..1，落子方视角
   delta: number; // 0..1，ai_wr - actual_wr
+  fact_tags?: string[]; // Fact Extractor 识别出的事实标签（坏形/定式等），供失误项展示
   explain?: string;
 }
 

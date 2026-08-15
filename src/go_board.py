@@ -101,6 +101,61 @@ def build_grid_from_moves(moves, size):
     return b
 
 
+def neighbors4(x: int, y: int, size: int):
+    """4 邻接坐标生成器（用于棋子群/气数计算）。"""
+    for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        nx, ny = x + dx, y + dy
+        if 0 <= nx < size and 0 <= ny < size:
+            yield nx, ny
+
+
+def group_and_liberties(grid, x, y, size):
+    """返回包含 (x,y) 的棋子群（同色连通块）坐标集合及其气点集合。
+
+    grid: 二维数组，0=空,1=黑,2=白。用于判断「己方棋子群多少气」「是否被叫吃」。
+    """
+    color = grid[y][x]
+    if color == 0:
+        return set(), set()
+    stones: set = set()
+    libs: set = set()
+    stack = [(x, y)]
+    seen: set = set()
+    while stack:
+        cx, cy = stack.pop()
+        if (cx, cy) in seen:
+            continue
+        seen.add((cx, cy))
+        stones.add((cx, cy))
+        for nx, ny in neighbors4(cx, cy, size):
+            c = grid[ny][nx]
+            if c == 0:
+                libs.add((nx, ny))
+            elif c == color and (nx, ny) not in seen:
+                stack.append((nx, ny))
+    return stones, libs
+
+
+def count_unsettled(grid, size, threshold=4):
+    """统计气数 <= threshold 的棋子群数量（未安定大龙，用于判断是否进入战斗/中盘）。"""
+    visited: set = set()
+    count = 0
+    for y in range(size):
+        for x in range(size):
+            if grid[y][x] != 0 and (x, y) not in visited:
+                stones, libs = group_and_liberties(grid, x, y, size)
+                visited |= stones
+                if len(libs) <= threshold:
+                    count += 1
+    return count
+
+
+def empty_ratio(grid, size):
+    """空点比例（用于阶段识别：布局空点多、官子空点少）。"""
+    empty = sum(1 for y in range(size) for x in range(size) if grid[y][x] == 0)
+    return empty / (size * size)
+
+
 def board_to_ascii(moves, size, actual_sgf=None, best_sgf=None):
     """把「某手落子前」的局面渲染成 ASCII 棋盘字符串，供 LLM 建立空间认知。
 

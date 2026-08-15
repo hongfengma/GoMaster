@@ -552,6 +552,28 @@ body {
   font-size: 13px;
   padding: 8px 4px;
 }
+/* 事实标签（Fact Extractor 识别的坏形/定式等） */
+.fact-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  width: 100%;
+  margin-top: 4px;
+}
+.fact-tag {
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: #eef4ea;
+  color: #3b6d11;
+  border: 1px solid #cfe0bf;
+}
+.fact-tag.bad {
+  background: #fdecec;
+  color: #a32d2d;
+  border-color: #f0c1c1;
+}
 
 /* ---------- Markdown 讲解 ---------- */
 .explain-empty {

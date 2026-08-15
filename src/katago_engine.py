@@ -75,7 +75,7 @@ class KataGoEngine:
             pass
 
     def analyze(self, moves, analyze_turn, size=19, komi=7.5,
-                max_visits=120, timeout=90):
+                max_visits=120, timeout=90, include_ownership=False):
         """分析 analyze_turn 这一手之前的局面。
 
         moves: GTP 坐标序列 list[ ["B","D4"], ... ]，长度为 analyze_turn
@@ -103,7 +103,7 @@ class KataGoEngine:
             "analyzeTurns": [analyze_turn],
             "maxVisits": max_visits,
             "includePolicy": False,
-            "includeOwnership": False,
+            "includeOwnership": bool(include_ownership),
             "includeMovesOwnership": False,
         }
         self.proc.stdin.write(json.dumps(req) + "\n")

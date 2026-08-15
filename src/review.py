@@ -21,6 +21,7 @@ from go_board import (
 from sgf_parser import parse_sgf
 from katago_engine import KataGoEngine
 from explainer import explain_move
+from fact_extractor import extract_fact
 
 
 def _sgfcoord_to_gtp(sgf_coord, size):
@@ -52,7 +53,8 @@ def _to_color_wr(wr, color):
 _ANALYSIS_CACHE: dict = {}
 
 
-def _analyze_cached(eng, moves, turn, size, komi, max_visits, nn_key):
+def _analyze_cached(eng, moves, turn, size, komi, max_visits, nn_key,
+                    include_ownership=False):
     key = (
         tuple((c, m) for c, m in moves),
         int(turn),
@@ -60,11 +62,14 @@ def _analyze_cached(eng, moves, turn, size, komi, max_visits, nn_key):
         float(komi),
         int(max_visits),
         str(nn_key),
+        bool(include_ownership),
     )
     hit = _ANALYSIS_CACHE.get(key)
     if hit is not None:
         return hit
-    resp = eng.analyze(moves, turn, size=size, komi=komi, max_visits=max_visits)
+    resp = eng.analyze(moves, turn, size=size, komi=komi,
+                       max_visits=max_visits,
+                       include_ownership=include_ownership)
     # 简易上限保护，避免极长对局反复重跑撑爆内存
     if len(_ANALYSIS_CACHE) > 40000:
         _ANALYSIS_CACHE.clear()
@@ -144,20 +149,39 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
                      else ("官子" if (i + 1) > n * 0.75 else "中盘"))
 
             # 2) 分析“实际落子之后”的局面 -> 取根节点胜率（黑视角）-> 换算该方实际胜率
+            #    开启 ownership 以拿到 scoreLead（目差），供 Fact Extractor 做阶段/态势判断。
             after_moves = before_moves + [[color, _sgfcoord_to_gtp(sgf_coord, size)]]
             try:
                 resp_after = _analyze_cached(
-                    eng, after_moves, i + 1, size, komi, max_visits, eng.weight)
+                    eng, after_moves, i + 1, size, komi, max_visits, eng.weight,
+                    include_ownership=True)
                 root_wr = resp_after.get("rootInfo", {}).get("winrate")
                 opp_wr = root_wr if root_wr is not None else ai_wr
+                score_lead = resp_after.get("rootInfo", {}).get("scoreLead")
             except Exception as e:
                 print(f"  第{i+1}手 after 分析异常: {e}")
                 opp_wr = ai_wr
                 root_wr = None
+                score_lead = None
             wr_black = float(root_wr) if root_wr is not None else None
             # KataGo winrate 为黑视角，统一转换到当前落子方视角
             actual_wr = _to_color_wr(opp_wr, color) if opp_wr is not None else ai_wr
             delta = ai_wr - actual_wr
+
+            # —— Fact Extractor：确定性事实抽取（阶段/棋形/定式/上下文）——
+            # 在 KataGo 分析之后、讲解之前跑，输出结构化事实单，让 LLM 只负责「讲」不负责「看」。
+            try:
+                fact = extract_fact(
+                    moves, i, size, komi, color, actual_gtp, best_gtp,
+                    best_pv, resp_before, resp_after, winrates,
+                    score_lead=score_lead,
+                )
+            except Exception as _fe:
+                print(f"  第{i+1}手 事实抽取异常: {_fe}")
+                fact = None
+            if fact:
+                # 用事实单的阶段覆盖原「按手数比例」的粗略判断
+                phase = fact.get("phase", phase)
 
             actual_disp = sgf_coord if (sgf_coord and len(sgf_coord) >= 2) else "PASS"
             entry = {
@@ -186,6 +210,14 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
                 for x in range(size)
                 if board_state[y][x]
             ]
+            # 挂载事实单与「事实标签」（供前端失误项展示，让讲解有据可查）
+            entry["fact"] = fact
+            if fact:
+                _jt = fact.get("joseki") or {}
+                entry["fact_tags"] = list(fact.get("shape_bad", [])) + (
+                    [_jt["matched"]] if _jt.get("matched") else [])
+            else:
+                entry["fact_tags"] = []
             entries.append(entry)
             winrates.append({
                 "move": i + 1,
@@ -245,6 +277,7 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
             top3=e.get("top3", []),
             phase=e.get("phase", "中盘"),
             board_ascii=board_ascii,
+            fact_sheet=e.get("fact"),
             llm=llm_cfg,
         )
         if progress_cb:
@@ -314,6 +347,9 @@ def _build_report(meta, entries, mistakes, threshold, level, max_visits):
         lines.append(f"| AI 推荐 | **{e['best']}** |")
         lines.append(f"| 胜率变化 | {e['ai_wr']*100:.1f}% → {e['actual_wr']*100:.1f}%"
                      f"（下降 {e['delta']*100:.1f} 个百分点） |")
+        tags = e.get("fact_tags") or []
+        if tags:
+            lines.append(f"| 事实标签 | {', '.join(tags)} |")
         lines.append("")
         lines.append("**教练讲解：**\n")
         lines.append(e.get("explain", "（无）"))

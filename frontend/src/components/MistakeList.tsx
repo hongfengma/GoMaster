@@ -41,6 +41,23 @@ export default function MistakeList() {
               {e ? sign(e.delta) : "…"}
               {ready ? "" : " · 讲解中"}
             </span>
+            {e?.fact_tags && e.fact_tags.length > 0 && (
+              <div className="fact-tags">
+                {e.fact_tags.map((t) => (
+                  <span
+                    key={t}
+                    className={
+                      "fact-tag" +
+                      (t.includes("(") && /接不归|空三角|方四|凝形|裂形/.test(t)
+                        ? " bad"
+                        : "")
+                    }
+                  >
+                    {t}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         );
       })}

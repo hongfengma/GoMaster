@@ -24,6 +24,11 @@ try:
 except Exception:  # rag 模块缺失时优雅降级，不影响主流程
     _rag_retrieve = None
 
+try:
+    from fact_extractor import fact_to_text as _fact_to_text
+except Exception:  # 事实抽取模块缺失时优雅降级
+    _fact_to_text = None
+
 
 def _full_chat_url(base_url: str) -> str:
     """把「OpenAI 兼容 base_url」规范化为完整 chat completions 端点。
@@ -161,10 +166,35 @@ def _fallback_explain(move_no, color_cn, actual_gtp, best_gtp,
     )
 
 
+def verify_explain(text, fact_sheet):
+    """规则校验器（Verifier）：用事实单核对讲解中的事实声明，不调用 API。
+
+    命中明显矛盾时返回告警字符串列表；无矛盾返回空列表。
+    仅做轻量关键词/信号比对，目的不是穷尽 NLP，而是拦住最刺眼的幻觉。
+    """
+    warns = []
+    if not fact_sheet or not text:
+        return warns
+    bad = fact_sheet.get("shape_bad", [])
+    phase = fact_sheet.get("phase", "")
+
+    if "接不归/自紧气" in bad and any(
+            k in text for k in ("做活", "安定", "已活", "安全", "活棋", "眼位")):
+        warns.append("事实单显示该手为接不归/自紧气（仅1气），与文中『做活/安定』表述矛盾")
+
+    if bad and any(k in text for k in ("好形", "好形状", "形状很好", "漂亮的形状")):
+        warns.append(f"事实单识别出坏形（{', '.join(bad)}），文中却称好形，请以事实单为准")
+
+    if phase == "官子" and "战斗" in text and "收官" not in text and "官子" not in text:
+        warns.append("事实单判定本手处于官子阶段，文中提及战斗但未见收官表述，请确认")
+
+    return warns
+
+
 def explain_move(move_no, color_cn, actual_sgf, best_sgf,
                  ai_wr, actual_wr, delta, best_pv_gtp, size,
                  recent_moves_sgf, level=USER_LEVEL, top3=None, phase="中盘",
-                 board_ascii=None, llm=None):
+                 board_ascii=None, fact_sheet=None, llm=None):
     """生成单手复盘讲解文本（结构化 Markdown，准确性优先）。
 
     参数说明：
@@ -184,14 +214,22 @@ def explain_move(move_no, color_cn, actual_sgf, best_sgf,
 
     zone = _zone_of(actual_sgf, size)
 
-    # —— RAG 知识库检索（增强 query：带 phase + zone 概念标签）——
+    # —— RAG 知识库检索（增强 query：带 phase + zone + 事实标签，命中更准）——
     rag_text = ""
     if _rag_retrieve:
         try:
+            facts = []
+            if fact_sheet:
+                facts += list(fact_sheet.get("shape_bad", []))
+                facts += list(fact_sheet.get("shape_good", []))
+                jt = fact_sheet.get("joseki") or {}
+                if jt.get("matched"):
+                    facts.append(jt["matched"])
             q = (f"{color_cn}方 第{move_no}手 实际{actual_sgf} 推荐{best_sgf} "
-                 f"{phase} {zone}")
+                 f"{phase} {zone} " + " ".join(facts))
             chunks = _rag_retrieve(q, top_k=3, meta={
-                "phase": phase, "zone": zone, "color": color_cn})
+                "phase": phase, "zone": zone, "color": color_cn,
+                "board_features": facts})
             if chunks:
                 rag_text = "\n\n".join(
                     f"· 《{c.get('title','')}》（{c.get('category','')}）：{c.get('content','')}"
@@ -210,6 +248,10 @@ def explain_move(move_no, color_cn, actual_sgf, best_sgf,
         f"不得凭空杜撰名称。若你不确定某条棋理是否适用，必须在「不确定点」里明说，"
         f"或写「此处建议摆谱验证」，绝不可含糊带过。\n"
         f"4. 描述落点时务必使用方位词（左上/右上/左下/右下/星位/小目/三三/边上/中腹）。\n"
+        f"4.5 若下方出现【事实单】，其内容为程序对棋盘的确定性计算结果"
+        f"（阶段/棋形/定式/形势/后续主变），你必须以其为准；"
+        f"事实单未提及的棋理、定式、棋形名称不得自行断言，"
+        f"若你认为相关请在「不确定点」中明说并建议摆谱验证。\n"
         f"5. 输出必须严格按下列 5 个 Markdown 标题分段，不要增减段落：\n"
         f"### 问题定性\n### 关键棋理\n### 推荐点意图\n### 后续推演\n### 不确定点\n"
         f"6. 全程使用 Markdown（**加粗**、列表），总篇幅控制在 280 字以内。\n\n"
@@ -229,10 +271,12 @@ def explain_move(move_no, color_cn, actual_sgf, best_sgf,
         if board_ascii else
         f"【当前局面】第 {move_no} 手（{color_cn}方）落子前。"
     )
+    fact_block = _fact_to_text(fact_sheet) if (_fact_to_text and fact_sheet) else ""
 
     user = (
         f"这是一盘 {size} 路棋盘的复盘，本手处于「{phase}」阶段、位于「{zone or '棋盘'}」。\n\n"
         f"{board_block}"
+        f"{fact_block}\n\n" if fact_block else ""
         f"【该方实际落子】{actual_sgf}（即盘面上 ◆ 处）\n"
         f"【AI 推荐落子】{best_sgf}（即盘面上 ★ 处）\n"
         f"【前情】最近几手依次是：{recent}（均为 GTP 坐标：列字母+行数字）\n"
@@ -257,8 +301,14 @@ def explain_move(move_no, color_cn, actual_sgf, best_sgf,
         user += f"\n\n【参考资料】（若与本题相关请引用并注明出处，不相关则忽略）\n{rag_text}\n"
 
     try:
-        return _call_deepseek(system, user, max_tokens=700, temperature=0.1, llm=llm)
+        content = _call_deepseek(system, user, max_tokens=700, temperature=0.1, llm=llm)
     except Exception:
         return _fallback_explain(move_no, color_cn, actual_sgf, best_sgf,
                                  ai_wr, actual_wr, delta, size, phase=phase,
                                  best_pv_gtp=best_pv_gtp, zone=zone)
+    # Verifier：规则校验（不增 API 调用），命中矛盾则附系统提示
+    if fact_sheet:
+        warns = verify_explain(content, fact_sheet)
+        if warns:
+            content = content.rstrip() + "\n\n> 系统校验提示：" + "；".join(warns)
+    return content
