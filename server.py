@@ -30,7 +30,7 @@ except Exception:
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "src"))
 
-from config import DEFAULT_MAX_VISITS, DEFAULT_THRESHOLD, USER_LEVEL
+from config import DEFAULT_MAX_VISITS, DEFAULT_THRESHOLD, USER_LEVEL, WEIGHT
 from userconfig import load as load_usercfg, save as save_usercfg
 from sgf_parser import parse_sgf
 from review import run_review
@@ -181,12 +181,15 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/version":
             self._send(200, {
                 "status": "ok",
-                "version": "0.9.2",
+                "version": "0.9.3",
                 "cwd": os.getcwd(),
             })
             return
         if path == "/api/config":
-            self._send(200, load_usercfg())
+            cfg = load_usercfg()
+            # 附带「当前实际使用的神经网络权重」，便于设置界面展示
+            cfg["current_nn"] = WEIGHT
+            self._send(200, cfg)
             return
         if path.startswith("/api/analyze/"):
             task_id = path.rsplit("/", 1)[-1]

@@ -217,3 +217,21 @@ ipcMain.handle("export-report-pdf", async (_evt, { html, css }) => {
     }
   }
 });
+
+// 选择 KataGo 神经网络权重文件（.bin.gz / .bin）
+ipcMain.handle("select-weight-file", async () => {
+  try {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: "选择 KataGo 神经网络权重文件",
+      properties: ["openFile"],
+      filters: [
+        { name: "KataGo 权重", extensions: ["gz", "bin"] },
+        { name: "所有文件", extensions: ["*"] },
+      ],
+    });
+    if (canceled || !filePaths || filePaths.length === 0) return null;
+    return filePaths[0];
+  } catch (e) {
+    return null;
+  }
+});

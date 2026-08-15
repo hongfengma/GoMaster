@@ -10,4 +10,5 @@ contextBridge.exposeInMainWorld("appInfo", {
 contextBridge.exposeInMainWorld("electronAPI", {
   exportReportPDF: (html, css) =>
     ipcRenderer.invoke("export-report-pdf", { html, css }),
+  selectWeightFile: () => ipcRenderer.invoke("select-weight-file"),
 });

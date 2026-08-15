@@ -61,7 +61,8 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
     if user_cfg:
         from userconfig import resolve_katago, llm_section
         ke, kc, kw = resolve_katago(user_cfg.get("katago_exe"),
-                                    user_cfg.get("katago_cfg"))
+                                    user_cfg.get("katago_cfg"),
+                                    user_cfg.get("nn_path"))
         eng = KataGoEngine(exe=ke, weight=kw, cfg=kc)
         llm_cfg = llm_section(user_cfg)
     else:

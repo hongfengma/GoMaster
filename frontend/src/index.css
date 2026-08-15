@@ -135,6 +135,20 @@ body {
 .btn.primary:hover:not(:disabled) {
   filter: brightness(1.05);
 }
+.btn.small {
+  padding: 6px 12px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.path-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.path-row input {
+  flex: 1;
+  min-width: 0;
+}
 
 .err {
   color: var(--accent-red);

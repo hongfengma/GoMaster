@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.9.2",
+  "version": "0.9.3",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -10,9 +10,9 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "electron": "electron .",
-    "electron:pack": "npm run build && electron-packager . GoMaster --platform=win32 --arch=x64 --out=dist-electron-v092 --overwrite --extra-resource=../server.py --extra-resource=../src --extra-resource=../.env --extra-resource=dist --ignore=\"(dist|src|deps|server\\.py|__pycache__|node_modules/electron$|node_modules/electron-packager|dist-electron*)\"",
-    "electron:pack:mac": "npm run build && electron-packager . GoMaster --platform=darwin --arch=x64 --out=dist-electron-mac --overwrite --extra-resource=../server.py --extra-resource=../src --extra-resource=../.env --extra-resource=dist --ignore=\"(dist|src|deps|server\\.py|__pycache__|node_modules/electron$|node_modules/electron-packager|dist-electron*)\"",
-    "electron:pack:mac:arm": "npm run build && electron-packager . GoMaster --platform=darwin --arch=arm64 --out=dist-electron-mac --overwrite --extra-resource=../server.py --extra-resource=../src --extra-resource=../.env --extra-resource=dist --ignore=\"(dist|src|deps|server\\.py|__pycache__|node_modules/electron$|node_modules/electron-packager|dist-electron*)\""
+    "electron:pack": "npm run build && electron-packager . GoMaster --platform=win32 --arch=x64 --out=dist-electron-v093 --overwrite --extra-resource=../server.py --extra-resource=../src --extra-resource=../weights --extra-resource=../.env --extra-resource=dist --ignore=\"(dist|src|deps|server\\.py|__pycache__|node_modules/electron$|node_modules/electron-packager|dist-electron*)\"",
+    "electron:pack:mac": "npm run build && electron-packager . GoMaster --platform=darwin --arch=x64 --out=dist-electron-mac --overwrite --extra-resource=../server.py --extra-resource=../src --extra-resource=../weights --extra-resource=../.env --extra-resource=dist --ignore=\"(dist|src|deps|server\\.py|__pycache__|node_modules/electron$|node_modules/electron-packager|dist-electron*)\"",
+    "electron:pack:mac:arm": "npm run build && electron-packager . GoMaster --platform=darwin --arch=arm64 --out=dist-electron-mac --overwrite --extra-resource=../server.py --extra-resource=../src --extra-resource=../weights --extra-resource=../.env --extra-resource=dist --ignore=\"(dist|src|deps|server\\.py|__pycache__|node_modules/electron$|node_modules/electron-packager|dist-electron*)\""
   },
   "dependencies": {
     "react": "^19.2.8",

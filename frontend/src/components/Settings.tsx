@@ -9,6 +9,7 @@ import {
 const EMPTY: UserConfig = {
   katago_exe: "",
   katago_cfg: "",
+  nn_path: "",
   analysis_dir: "",
   llm_base_url: "https://api.deepseek.com/v1",
   llm_api_key: "",
@@ -98,6 +99,40 @@ export default function Settings({ onClose }: { onClose: () => void }) {
               placeholder="留空 = 自动探测内置版本"
               onChange={(e) => set("katago_cfg", e.target.value)}
             />
+          </label>
+          <label>
+            神经网络文件 (.bin.gz)
+            <div className="path-row">
+              <input
+                type="text"
+                value={cfg.nn_path}
+                placeholder="留空 = 自动探测（优先选最小网络，CPU 更快）"
+                onChange={(e) => set("nn_path", e.target.value)}
+              />
+              <button
+                type="button"
+                className="btn small"
+                onClick={async () => {
+                  try {
+                    const p = await window.electronAPI?.selectWeightFile?.();
+                    if (p) set("nn_path", p);
+                  } catch {
+                    /* 非 Electron 环境忽略 */
+                  }
+                }}
+              >
+                浏览
+              </button>
+            </div>
+            {cfg.current_nn && (
+              <small className="field-hint">
+                当前使用：{cfg.current_nn}
+              </small>
+            )}
+            <small className="field-hint">
+              网络越小 CPU 推理越快（如 b6c96 ~3.6MB 远快于 b10c384 ~37MB）。
+              想提速可下载小网络放到 KataGo 目录并在此处指定，或留空让其自动探测。
+            </small>
           </label>
 
           <h4>分析输出</h4>

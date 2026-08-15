@@ -5,6 +5,8 @@ interface ElectronAPI {
     html: string,
     css: string
   ) => Promise<{ ok: boolean; path?: string; error?: string }>;
+  /** 打开文件选择对话框，挑选 KataGo 神经网络权重文件（.bin.gz/.bin），返回绝对路径或 null。 */
+  selectWeightFile: () => Promise<string | null>;
 }
 
 declare global {

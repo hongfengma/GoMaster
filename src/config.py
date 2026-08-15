@@ -68,9 +68,11 @@ KATAGO_EXE = _find_katago_exe()
 
 # 权重文件：多路径探测，小网络优先（CPU 无独显机器速度更快），大网络兜底。
 # g170 系列 = 二进制格式（.bin.gz），适配 KataGo v1.17.1；kata1 系列是旧文本格式，已废弃。
+# PROJ = 仓库根（开发态）/ resources（打包态）；weights/ 为随包分发的小网络（仅 ~3.7MB，CPU 极快）。
 WEIGHT_CANDIDATES = [
+    os.path.join(PROJ, "weights", "g170-b6c96-s175395328-d26788732.bin.gz"),  # 随包小网络（默认，最快）
+    os.path.join(DEPS, "g170-b6c96-s175395328-d26788732.bin.gz"),     # 二进制 b6c96（开发态 deps）
     os.path.join(DEPS, "g170-b10c128-s197428736-d67404019.bin.gz"),   # 二进制 b10c128（更强，需另下）
-    os.path.join(DEPS, "g170-b6c96-s175395328-d26788732.bin.gz"),     # 二进制 b6c96（极快，已就绪）
     os.path.join(DEPS, "katago_b10c384h6nbttflrs.bin.gz"),            # 二进制大网络（deps 兜底）
     os.path.expanduser("~/katago/b10c384h6nbttflrs.bin.gz"),          # 本机大网络
     r"C:/Users/mhf/katago/b10c384h6nbttflrs.bin.gz",                  # 老马本机大网络
@@ -78,10 +80,38 @@ WEIGHT_CANDIDATES = [
 
 
 def _choose_weight():
-    for p in WEIGHT_CANDIDATES:
-        if os.path.isfile(p):
-            return p
-    return WEIGHT_CANDIDATES[-1]
+    """选择默认权重文件。
+
+    CPU / 无独显机器上，网络越小推理越快。策略：
+      1) 显式候选列表（deps 内置、本机大网络等）中存在的优先；
+      2) 额外扫描常见 KataGo 目录里的所有 *.bin.gz，把「文件最小」的排在最前
+         （小网络在 CPU 上明显更快），让用户自行放置的小网络自动胜出；
+      3) 都没有时回退到候选列表最后一个（便于报错定位）。
+    """
+    # 1) 收集显式候选中真实存在的
+    found = [p for p in WEIGHT_CANDIDATES if os.path.isfile(p)]
+    # 2) 扫描常见目录里的任意 .bin.gz（用户放置的小网络）
+    scan_dirs = [
+        os.path.join(PROJ, "weights"),           # 随包分发的小网络目录
+        os.path.join(DEPS, "katago"),
+        os.path.expanduser("~/katago"),
+        r"C:/Users/mhf/katago",
+    ]
+    for d in scan_dirs:
+        if os.path.isdir(d):
+            for fn in os.listdir(d):
+                if fn.lower().endswith(".bin.gz"):
+                    found.append(os.path.join(d, fn))
+    # 去重
+    uniq = []
+    for p in found:
+        if p not in uniq:
+            uniq.append(p)
+    if not uniq:
+        return WEIGHT_CANDIDATES[-1]
+    # 文件最小者优先（CPU 推理更快）
+    uniq.sort(key=lambda p: os.path.getsize(p))
+    return uniq[0]
 
 
 WEIGHT = _choose_weight()

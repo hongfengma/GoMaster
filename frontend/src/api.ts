@@ -35,10 +35,12 @@ export async function getHealth(): Promise<{ status: string }> {
 export interface UserConfig {
   katago_exe: string;
   katago_cfg: string;
+  nn_path: string;
   analysis_dir: string;
   llm_base_url: string;
   llm_api_key: string;
   llm_model: string;
+  current_nn?: string;
 }
 
 export async function getConfig(): Promise<UserConfig> {
