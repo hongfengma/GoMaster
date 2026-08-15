@@ -63,15 +63,25 @@ def _test_llm(llm: dict):
 
     兼容 OpenAI 协议：base_url 可为 https://api.deepseek.com/v1 等，
     自动补全 /chat/completions。
+
+    关键降级：用户未填写 api_key 时，自动 fallback 到 config.py 从 .env
+    读取的 DEEPSEEK_API_KEY，保证「留空 = 使用 .env 默认 Key」的语义一致。
     """
     import ssl as _ssl
     import urllib.request as _ureq
+
+    from config import DEEPSEEK_API_KEY
 
     base_url = (llm.get("base_url") or "https://api.deepseek.com/v1").strip().rstrip("/")
     if base_url.endswith("/chat/completions"):
         url = base_url
     else:
         url = base_url + "/chat/completions"
+    raw_key = (llm.get("api_key") or "").strip()
+    used_fallback = False
+    if not raw_key:
+        raw_key = DEEPSEEK_API_KEY
+        used_fallback = True
     payload = {
         "model": llm.get("model") or "deepseek-chat",
         "messages": [{"role": "user", "content": "ping"}],
@@ -84,7 +94,7 @@ def _test_llm(llm: dict):
         url,
         data=data,
         headers={
-            "Authorization": f"Bearer {llm.get('api_key') or ''}",
+            "Authorization": f"Bearer {raw_key}",
             "Content-Type": "application/json",
         },
     )
@@ -92,9 +102,16 @@ def _test_llm(llm: dict):
         with _ureq.urlopen(req, timeout=30, context=_ssl.create_default_context()) as r:
             resp = json.loads(r.read().decode("utf-8"))
     except Exception as e:
-        return {"ok": False, "error": f"连接失败: {e}"}
+        hint = ""
+        if "401" in str(e) or "Authentication" in str(e):
+            hint = "（API Key 无效或未填写；留空时将使用 .env 中的默认 Key）"
+        return {"ok": False, "error": f"连接失败: {e} {hint}".strip()}
     if resp.get("choices"):
-        return {"ok": True, "model": resp.get("model", llm.get("model"))}
+        return {
+            "ok": True,
+            "model": resp.get("model", llm.get("model")),
+            "fallback": used_fallback,
+        }
     return {"ok": False, "error": "响应缺少 choices 字段（检查模型名 / 接口路径 / Key）"}
 
 
@@ -164,7 +181,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/version":
             self._send(200, {
                 "status": "ok",
-                "version": "0.9.0",
+                "version": "0.9.1",
                 "cwd": os.getcwd(),
             })
             return

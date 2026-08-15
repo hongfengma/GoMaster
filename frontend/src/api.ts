@@ -61,11 +61,11 @@ export async function testLLM(cfg: {
   base_url: string;
   api_key: string;
   model: string;
-}): Promise<{ ok: boolean; model?: string; error?: string }> {
+}): Promise<{ ok: boolean; model?: string; error?: string; fallback?: boolean }> {
   const res = await fetch(`${BASE}/api/test-llm`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(cfg),
   });
-  return (await res.json()) as { ok: boolean; model?: string; error?: string };
+  return (await res.json()) as { ok: boolean; model?: string; error?: string; fallback?: boolean };
 }

@@ -57,8 +57,10 @@ export default function Settings({ onClose }: { onClose: () => void }) {
         api_key: cfg.llm_api_key,
         model: cfg.llm_model,
       });
-      if (r.ok) setMsg({ type: "ok", text: `连接成功（模型：${r.model}）` });
-      else setMsg({ type: "err", text: r.error || "连接失败" });
+      if (r.ok) {
+        const fb = r.fallback ? "，使用 .env 默认 Key" : "";
+        setMsg({ type: "ok", text: `连接成功（模型：${r.model}${fb}）` });
+      } else setMsg({ type: "err", text: r.error || "连接失败" });
     } catch (e) {
       setMsg({ type: "err", text: e instanceof Error ? e.message : "测试失败" });
     } finally {
@@ -127,6 +129,9 @@ export default function Settings({ onClose }: { onClose: () => void }) {
               placeholder="留空 = 使用 .env 中的 DeepSeek Key"
               onChange={(e) => set("llm_api_key", e.target.value)}
             />
+            <small className="field-hint">
+              留空时测试连接与实际复盘都会使用 .env 中的默认 DeepSeek Key
+            </small>
           </label>
           <label>
             模型名

@@ -356,6 +356,13 @@ body {
   color: var(--text);
   font-size: 13px;
 }
+.field-hint {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-soft);
+  line-height: 1.4;
+}
 .modal-footer {
   display: flex;
   justify-content: flex-end;
