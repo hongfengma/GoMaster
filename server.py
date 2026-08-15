@@ -123,7 +123,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/version":
             self._send(200, {
                 "status": "ok",
-                "version": "0.7.7",
+                "version": "0.8.0",
                 "cwd": os.getcwd(),
             })
             return

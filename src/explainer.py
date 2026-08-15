@@ -1,22 +1,23 @@
 # -*- coding: utf-8 -*-
-"""DeepSeek 解说生成器。
+"""DeepSeek 解说生成器（GoMaster v0.8 Phase A · 准确性优先）。
 
-把 KataGo 的结构化分析（实际落子 / 推荐选点 / 胜率差 / 变化树）与「落子前真实局面」
-的 ASCII 快照组装成面向初学者友好的 Prompt，调用 deepseek-chat 生成讲解。
-
-核心改进：
-  - 所有坐标统一用 GTP 记号（如 Q16），不再使用 SGF 两位字母（qd），模型可定位。
-  - 把「落子前真实局面」渲染成 ASCII 棋盘喂给模型，使其具备左右上下的空间认知，
-    从根本上解决「讲解被变化图带偏 / 方位说不清」的问题。
-  - 明确约束：变化图（PV）只是推演，绝非已落子，禁止按变化图各子位置铺陈。
-  - 可选接入 RAG 知识库（rag.py），把相关棋理/定式作为【参考资料】喂给模型。
+改造要点（相对 v0.7）：
+  - 提示词从「具体棋理 + 语气鼓励/生活化比喻」改为「精确、可验证、规范棋术语」，
+    删除软性口语要求，加入「禁止杜撰棋理/棋谚、不确定明说」硬约束。
+  - 输出结构化为 5 个 Markdown 分段（问题定性/关键棋理/推荐点意图/后续推演/不确定点），
+    便于前端分区展示、也便于人工校验「引用的棋理是否真实存在」。
+  - 温度 0.25 → 0.1，降低发散与编造。
+  - RAG 检索 query 增强：带 阶段(phase) + 区域(zone) 概念标签，命中更准（见 _zone_of）。
+  - 所有坐标统一 GTP 记号 + 基于真实局面讲解 + 坐标铁律，继承自 v0.7 并保留。
 """
 import json
+import re
 import ssl
 import time
 import urllib.request
 
 from config import (DEEPSEEK_API_KEY, DEEPSEEK_MODEL, DEEPSEEK_URL, USER_LEVEL)
+from go_board import gtp_to_xy
 
 try:
     from rag import retrieve as _rag_retrieve
@@ -24,7 +25,7 @@ except Exception:  # rag 模块缺失时优雅降级，不影响主流程
     _rag_retrieve = None
 
 
-def _call_deepseek(system: str, user: str, max_tokens=800, temperature=0.25,
+def _call_deepseek(system: str, user: str, max_tokens=800, temperature=0.1,
                    retries=2):
     """调用 DeepSeek。对空内容/瞬时错误/非法坐标自动重试或抛异常，由上层 fallback。"""
     last_err = None
@@ -72,11 +73,8 @@ def _call_deepseek(system: str, user: str, max_tokens=800, temperature=0.25,
 
 def _has_bad_coords(text: str) -> bool:
     """检测是否包含 dd、qq、ehh、fch 等非法坐标（连续 2+ 个小写字母）。"""
-    import re
-    # 匹配连续两个及以上小写字母，且不是英语常见短词（如 as/is 可放行，但围棋坐标不会单独出现）
     for m in re.finditer(r"[a-z]{2,}", text):
         w = m.group()
-        # 放行少量常见英文单词，其余视为非法坐标
         if w in {"as", "is", "it", "of", "to", "in", "on", "at", "by", "for", "or", "if", "up", "so"}:
             continue
         return True
@@ -84,7 +82,6 @@ def _has_bad_coords(text: str) -> bool:
 
 
 def _bad_coord_samples(text: str) -> str:
-    import re
     samples = []
     for m in re.finditer(r"[a-z]{2,}", text):
         w = m.group()
@@ -108,18 +105,38 @@ def _fmt_pv(pv_gtp, n=6):
     return " → ".join(out)
 
 
+def _zone_of(gtp, size):
+    """由 GTP 坐标推断盘面区域：角部 / 边上 / 中腹（供 RAG 检索与讲解方位）。"""
+    if not gtp or str(gtp).lower() in ("pass", "resign"):
+        return ""
+    xy = gtp_to_xy(str(gtp).upper(), size)
+    if not xy:
+        return ""
+    x, y = xy  # 0-based
+    if x < 0 or y < 0 or x >= size or y >= size:
+        return ""  # 越界坐标（理论上不该出现）不做区域判断
+    edge = lambda d: min(d, size - 1 - d)
+    ce, re = edge(x), edge(y)
+    if ce <= 2 and re <= 2:
+        return "角部"
+    if ce <= 2 or re <= 2:
+        return "边上"
+    return "中腹"
+
+
 def _fallback_explain(move_no, color_cn, actual_gtp, best_gtp,
                       ai_wr, actual_wr, delta, size, phase="中盘",
-                      best_pv_gtp=None):
+                      best_pv_gtp=None, zone=""):
     """LLM 调用失败时的兜底讲解：完全基于 KataGo 数据，保证每个失误手都有内容。"""
     pv = _fmt_pv(best_pv_gtp or [], 5)
     return (
-        f"这手 {actual_gtp} 不如 AI 推荐的 **{best_gtp}**："
+        f"### 问题定性\n这手 {actual_gtp} 不如 AI 推荐的 **{best_gtp}**："
         f"走推荐点，{color_cn}方胜率约 **{ai_wr:.1f}%**；实际走子后降到约 {actual_wr:.1f}%，"
-        f"下降了 **{delta:.1f} 个百分点**。\n\n"
-        f"当前处于「{phase}」阶段，差距主要源于落点方向或子力效率。"
-        f"若改走 {best_gtp}，后续大致为：{pv}；相比实际落子，能更好占到要点、减少被对方反抢。\n\n"
-        f"建议复盘时重点看：这一手是否加固了自己、是否把关键位置让给了对方。"
+        f"下降了 **{delta:.1f} 个百分点**。当前处于「{phase}」阶段（{zone}）。\n\n"
+        f"### 推荐点意图\n若改走 {best_gtp}，后续大致为：{pv}；相比实际落子，能更好占到要点、减少被对方反抢。\n\n"
+        f"### 关键棋理\n（大模型暂不可用，以下仅基于数据，未引用棋理，建议摆谱验证。）\n\n"
+        f"### 后续推演\n关注这一手是否加固了自己、是否把关键位置让给了对方。\n\n"
+        f"### 不确定点\n无（兜底内容不含棋理判断，请以 KataGo 数据为准）。"
     )
 
 
@@ -127,10 +144,10 @@ def explain_move(move_no, color_cn, actual_sgf, best_sgf,
                  ai_wr, actual_wr, delta, best_pv_gtp, size,
                  recent_moves_sgf, level=USER_LEVEL, top3=None, phase="中盘",
                  board_ascii=None):
-    """生成单手复盘讲解文本。
+    """生成单手复盘讲解文本（结构化 Markdown，准确性优先）。
 
     参数说明：
-      - actual_sgf / best_sgf：已经是 GTP 记号（如 Q16），由 review.py 转换后传入。
+      - actual_sgf / best_sgf：GTP 记号（如 Q16），由 review.py 转换后传入。
       - recent_moves_sgf：最近几手（GTP 记号）字符串列表。
       - board_ascii：落子前的真实局面 ASCII 快照（含 ★推荐点 / ◆实际点）。
       - top3: AI 前三候选 [{move,wr,pv}]；phase: 布局/中盘/官子。
@@ -144,27 +161,38 @@ def explain_move(move_no, color_cn, actual_sgf, best_sgf,
                           + (f"（后续：{tpv}）" if tpv != "（无）" else ""))
     cand_text = "\n".join(cand_lines) if cand_lines else "（无）"
 
-    # —— 可选：RAG 知识库检索，作为【参考资料】注入 ——
+    zone = _zone_of(actual_sgf, size)
+
+    # —— RAG 知识库检索（增强 query：带 phase + zone 概念标签）——
     rag_text = ""
     if _rag_retrieve:
         try:
-            q = f"{color_cn}方 第{move_no}手 实际{actual_sgf} 推荐{best_sgf} {phase}"
-            chunks = _rag_retrieve(q, top_k=3)
+            q = (f"{color_cn}方 第{move_no}手 实际{actual_sgf} 推荐{best_sgf} "
+                 f"{phase} {zone}")
+            chunks = _rag_retrieve(q, top_k=3, meta={
+                "phase": phase, "zone": zone, "color": color_cn})
             if chunks:
                 rag_text = "\n\n".join(
-                    f"· 《{c.get('title','')}》：{c.get('content','')}" for c in chunks
+                    f"· 《{c.get('title','')}》（{c.get('category','')}）：{c.get('content','')}"
+                    for c in chunks
                 )
         except Exception:
             rag_text = ""
 
     system = (
-        f"你是一位资深围棋教练，正在为「{level}」水平的爱好者做逐手复盘。"
-        f"讲解要求：紧扣本手得失，给出「具体棋理 + 局部棋形 + 后续推演」，禁止空泛套话；"
-        f"可引用定式、棋形、手筋、厚薄、势力、眼位、官子等，但必须结合本局面解释「为什么」；"
-        f"若引用棋谚，须说明它在当前局面如何体现，不得只甩「敌之要点即我之要点」而不解释。"
-        f"描述落点时务必使用方位词（左上/右上/左下/右下/星位/小目/三三/边上/中腹）。"
-        f"语气鼓励、易懂，控制在 240 字以内，可用 Markdown（**加粗**、列表）。"
-        f"\n\n【坐标铁律】本系统所有坐标均采用 GTP 记号：1 个大写英文字母 + 1–2 位数字，"
+        f"你是一位严谨的围棋教练，正在为「{level}」水平的爱好者做逐手复盘。\n"
+        f"【核心要求：准确优先于通顺】\n"
+        f"1. 讲解必须精确、可验证，使用规范棋术语（定式、棋形、手筋、厚薄、势力、眼位、官子、先手/后手等）。\n"
+        f"2. 紧扣本手得失，给出「具体棋理 + 局部棋形 + 后续推演」。禁止空泛套话，"
+        f"禁止为了通顺而编造棋理或用生活化比喻搪塞（如「好比……」「就像……」）。\n"
+        f"3. 若引用定式、棋谚或棋形：必须来自公认棋理或下方【参考资料】，并说明它在本局面如何体现；"
+        f"不得凭空杜撰名称。若你不确定某条棋理是否适用，必须在「不确定点」里明说，"
+        f"或写「此处建议摆谱验证」，绝不可含糊带过。\n"
+        f"4. 描述落点时务必使用方位词（左上/右上/左下/右下/星位/小目/三三/边上/中腹）。\n"
+        f"5. 输出必须严格按下列 5 个 Markdown 标题分段，不要增减段落：\n"
+        f"### 问题定性\n### 关键棋理\n### 推荐点意图\n### 后续推演\n### 不确定点\n"
+        f"6. 全程使用 Markdown（**加粗**、列表），总篇幅控制在 280 字以内。\n\n"
+        f"【坐标铁律】本系统所有坐标均采用 GTP 记号：1 个大写英文字母 + 1–2 位数字，"
         f"例如 Q16、D4、K10。你输出中提到的任何落点，都必须是这种格式。"
         f"绝对禁止输出 dd、qq、ddd、ehh、fch 等两位或三位小写字母串。"
         f"如果某个点在脑中是小写两位字母（如 dd），你必须先转换成 GTP（如 D4）再写。"
@@ -182,7 +210,7 @@ def explain_move(move_no, color_cn, actual_sgf, best_sgf,
     )
 
     user = (
-        f"这是一盘 {size} 路棋盘的复盘。\n\n"
+        f"这是一盘 {size} 路棋盘的复盘，本手处于「{phase}」阶段、位于「{zone or '棋盘'}」。\n\n"
         f"{board_block}"
         f"【该方实际落子】{actual_sgf}（即盘面上 ◆ 处）\n"
         f"【AI 推荐落子】{best_sgf}（即盘面上 ★ 处）\n"
@@ -191,24 +219,25 @@ def explain_move(move_no, color_cn, actual_sgf, best_sgf,
         f"下降了约 {delta:.1f} 个百分点。\n"
         f"【AI 前三候选（{color_cn}方视角胜率）】\n{cand_text}\n"
         f"【AI 推荐后续变化（仅是推演，不是已经下的子）】{best_sgf} → {pv_str}\n\n"
-        f"请严格按下列要求讲解（用 Markdown，240 字以内）：\n"
-        f"1）**必须基于上面的【当前局面】和【该方实际落子 {actual_sgf}】来讲**。"
-        f"变化图（【AI 推荐后续变化】）只是假设性推演，绝不可把变化图里的子当作已经落下的子来讲解，"
-        f"也绝不可只按变化图各子的位置铺陈。\n"
-        f"2）**问题**：实际这手（{actual_sgf}）的问题具体是什么"
-        f"（子力重复/方向偏差/忽视弱棋/被抢要点/死活误判/官子损目…）？结合盘面方位"
-        f"（如「右上角」「左边星位」「三三」「小目」「中腹」等）与棋形说清。\n"
-        f"3）**为什么推荐 {best_sgf}**：它实现了什么意图"
-        f"（拆边/挂角/守角/打入/侵消/补强/出头/做活/杀棋/收官…）。\n"
-        f"4）**推演**：若走 {best_sgf}，对方大概会怎么应、2~3 手后预期形势；相比实际落子具体多出了什么。\n"
-        f"5）**棋理点睛**：用一条贴切棋谚收束，并说明它在此处如何体现。"
+        f"请严格按下列要求讲解（Markdown，280 字以内，5 段结构）：\n"
+        f"### 问题定性\n实际这手（{actual_sgf}）的问题具体是什么"
+        f"（子力重复/方向偏差/忽视弱棋/被抢要点/死活误判/官子损目/孤棋未安顿…）？"
+        f"结合盘面方位（如「右上角」「左边星位」「三三」「小目」「中腹」）与棋形说清。\n"
+        f"### 关键棋理\n点出本局面相关的 1–2 条棋理/定式/棋形/棋谚，并说明它在此处如何体现；"
+        f"若下方【参考资料】中有相关条目，优先引用并注明。\n"
+        f"### 推荐点意图\n{best_sgf} 实现了什么意图"
+        f"（拆边/挂角/守角/打入/侵消/补强/出头/做活/杀棋/收官/争先…）。\n"
+        f"### 后续推演\n若走 {best_sgf}，对方大概会怎么应、2~3 手后预期形势；相比实际落子具体多出了什么。\n"
+        f"### 不确定点\n若对棋理适用性或后续变化无把握，在此明说；若确信无误，写「无」。\n\n"
+        f"注意：变化图（【AI 推荐后续变化】）只是假设性推演，绝不可把变化图里的子当作已经落下的子来讲解，"
+        f"也绝不可只按变化图各子的位置铺陈。必须基于上面的【当前局面】和【该方实际落子 {actual_sgf}】来讲。"
     )
     if rag_text:
-        user += f"\n\n【参考资料】（若与本题相关请引用，不相关则忽略）\n{rag_text}\n"
+        user += f"\n\n【参考资料】（若与本题相关请引用并注明出处，不相关则忽略）\n{rag_text}\n"
 
     try:
-        return _call_deepseek(system, user, max_tokens=600, temperature=0.25)
+        return _call_deepseek(system, user, max_tokens=700, temperature=0.1)
     except Exception:
         return _fallback_explain(move_no, color_cn, actual_sgf, best_sgf,
                                  ai_wr, actual_wr, delta, size, phase=phase,
-                                 best_pv_gtp=best_pv_gtp)
+                                 best_pv_gtp=best_pv_gtp, zone=zone)
