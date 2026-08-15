@@ -1,9 +1,11 @@
+import { useState } from "react";
 import { useAppStore } from "./store";
 import Toolbar from "./components/Toolbar";
 import Board from "./components/Board";
 import Navigator from "./components/Navigator";
 import InfoPanel from "./components/InfoPanel";
 import MistakeList from "./components/MistakeList";
+import Settings from "./components/Settings";
 import type { ReviewEntry } from "./types";
 
 const sign = (x: number) => (x >= 0 ? "+" : "") + (x * 100).toFixed(1) + "%";
@@ -44,14 +46,22 @@ export default function App() {
   const meta = useAppStore((s) => s.meta);
   const status = useAppStore((s) => s.status);
   const error = useAppStore((s) => s.error);
+  const [showSettings, setShowSettings] = useState(false);
 
   return (
     <div className="app">
       <header className="app-header">
-        <h1>围棋教练 · AI 复盘</h1>
-        <p className="subtitle">
-          导入棋谱 → 逐手复盘 → 看清你与高手之间的那几目棋
-        </p>
+        <div className="app-title-row">
+          <div>
+            <h1>围棋教练 · AI 复盘</h1>
+            <p className="subtitle">
+              导入棋谱 → 逐手复盘 → 看清你与高手之间的那几目棋
+            </p>
+          </div>
+          <button className="btn settings-btn" onClick={() => setShowSettings(true)}>
+            设置
+          </button>
+        </div>
       </header>
       <Toolbar />
       {error && <div className="err-banner">复盘出错：{error}</div>}
@@ -67,10 +77,11 @@ export default function App() {
           </div>
         </div>
       ) : (
-        <div className="empty-hint">
+          <div className="empty-hint">
           {status === "pending" ? "正在提交棋谱…" : "请导入 SGF 棋谱开始复盘。"}
         </div>
       )}
+      {showSettings && <Settings onClose={() => setShowSettings(false)} />}
     </div>
   );
 }

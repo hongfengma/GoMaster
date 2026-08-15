@@ -31,6 +31,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "src"))
 
 from config import DEFAULT_MAX_VISITS, DEFAULT_THRESHOLD, USER_LEVEL
+from userconfig import load as load_usercfg, save as save_usercfg
 from sgf_parser import parse_sgf
 from review import run_review
 
@@ -55,6 +56,46 @@ MIME = {
     ".svg": "image/svg+xml",
     ".ico": "image/x-icon",
 }
+
+
+def _test_llm(llm: dict):
+    """测试大模型连接（不校验内容，仅验证连通性与返回结构）。
+
+    兼容 OpenAI 协议：base_url 可为 https://api.deepseek.com/v1 等，
+    自动补全 /chat/completions。
+    """
+    import ssl as _ssl
+    import urllib.request as _ureq
+
+    base_url = (llm.get("base_url") or "https://api.deepseek.com/v1").strip().rstrip("/")
+    if base_url.endswith("/chat/completions"):
+        url = base_url
+    else:
+        url = base_url + "/chat/completions"
+    payload = {
+        "model": llm.get("model") or "deepseek-chat",
+        "messages": [{"role": "user", "content": "ping"}],
+        "max_tokens": 5,
+        "temperature": 0,
+        "stream": False,
+    }
+    data = json.dumps(payload).encode("utf-8")
+    req = _ureq.Request(
+        url,
+        data=data,
+        headers={
+            "Authorization": f"Bearer {llm.get('api_key') or ''}",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with _ureq.urlopen(req, timeout=30, context=_ssl.create_default_context()) as r:
+            resp = json.loads(r.read().decode("utf-8"))
+    except Exception as e:
+        return {"ok": False, "error": f"连接失败: {e}"}
+    if resp.get("choices"):
+        return {"ok": True, "model": resp.get("model", llm.get("model"))}
+    return {"ok": False, "error": "响应缺少 choices 字段（检查模型名 / 接口路径 / Key）"}
 
 
 def run_task(task_id, sgf_path, visits, threshold, level):
@@ -84,7 +125,7 @@ def run_task(task_id, sgf_path, visits, threshold, level):
         tasks[task_id]["status"] = "running"
     try:
         run_review(sgf_path, max_visits=visits, threshold=threshold,
-                   level=level, progress_cb=cb)
+                   level=level, progress_cb=cb, user_cfg=load_usercfg())
     except Exception as e:
         with tasks_lock:
             tasks[task_id]["status"] = "error"
@@ -123,9 +164,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/version":
             self._send(200, {
                 "status": "ok",
-                "version": "0.8.0",
+                "version": "0.9.0",
                 "cwd": os.getcwd(),
             })
+            return
+        if path == "/api/config":
+            self._send(200, load_usercfg())
             return
         if path.startswith("/api/analyze/"):
             task_id = path.rsplit("/", 1)[-1]
@@ -190,6 +234,31 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
+        if parsed.path == "/api/config":
+            raw = self._read_body()
+            try:
+                body = json.loads(raw.decode("utf-8"))
+            except Exception:
+                self._send(400, {"error": "invalid json"})
+                return
+            try:
+                saved = save_usercfg(body)
+                self._send(200, saved)
+            except Exception as e:
+                self._send(500, {"error": str(e)})
+            return
+        if parsed.path == "/api/test-llm":
+            raw = self._read_body()
+            try:
+                body = json.loads(raw.decode("utf-8"))
+            except Exception:
+                self._send(400, {"error": "invalid json"})
+                return
+            try:
+                self._send(200, _test_llm(body))
+            except Exception as e:
+                self._send(200, {"ok": False, "error": str(e)})
+            return
         if parsed.path != "/api/analyze":
             self._send(404, {"error": "not found"})
             return

@@ -31,3 +31,41 @@ export async function getHealth(): Promise<{ status: string }> {
   if (!res.ok) throw new Error("服务不可用");
   return (await res.json()) as { status: string };
 }
+
+export interface UserConfig {
+  katago_exe: string;
+  katago_cfg: string;
+  analysis_dir: string;
+  llm_base_url: string;
+  llm_api_key: string;
+  llm_model: string;
+}
+
+export async function getConfig(): Promise<UserConfig> {
+  const res = await fetch(`${BASE}/api/config`);
+  if (!res.ok) throw new Error(`读取配置失败 ${res.status}`);
+  return (await res.json()) as UserConfig;
+}
+
+export async function saveConfig(cfg: UserConfig): Promise<UserConfig> {
+  const res = await fetch(`${BASE}/api/config`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(cfg),
+  });
+  if (!res.ok) throw new Error(`保存配置失败 ${res.status}`);
+  return (await res.json()) as UserConfig;
+}
+
+export async function testLLM(cfg: {
+  base_url: string;
+  api_key: string;
+  model: string;
+}): Promise<{ ok: boolean; model?: string; error?: string }> {
+  const res = await fetch(`${BASE}/api/test-llm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(cfg),
+  });
+  return (await res.json()) as { ok: boolean; model?: string; error?: string };
+}

@@ -259,6 +259,135 @@ body {
   font-weight: 500;
 }
 
+.pv-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.pv-toggle.active {
+  background: var(--accent-green);
+  border-color: var(--accent-green);
+  color: #fff;
+}
+.pv-hint {
+  font-size: 12px;
+  color: var(--text-soft);
+}
+@media (prefers-color-scheme: dark) {
+  .pv-toggle.active {
+    color: #fff;
+  }
+}
+
+/* ---------- 标题栏设置按钮 ---------- */
+.app-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  text-align: left;
+}
+.app-title-row .subtitle {
+  margin-top: 6px;
+}
+.settings-btn {
+  white-space: nowrap;
+}
+
+/* ---------- 设置弹窗 ---------- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 20px;
+}
+.modal {
+  background: var(--panel-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  width: 100%;
+  max-width: 460px;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-header h3 {
+  margin: 0;
+  font-size: 17px;
+}
+.modal-body {
+  padding: 16px 18px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.modal-body h4 {
+  margin: 10px 0 2px;
+  font-size: 13px;
+  color: var(--accent);
+}
+.modal-body label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-soft);
+}
+.modal-body input {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: #fff;
+  color: var(--text);
+  font-size: 13px;
+}
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+}
+.ok-msg {
+  font-size: 13px;
+  color: var(--accent-green);
+  background: rgba(31, 170, 89, 0.1);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.err-msg {
+  font-size: 13px;
+  color: #b3261e;
+  background: #fdeaea;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+@media (prefers-color-scheme: dark) {
+  .modal-body input {
+    background: #2c2820;
+    color: var(--text);
+  }
+  .err-msg {
+    background: #3a1f1d;
+    color: #f0a8a3;
+  }
+}
+
 .overview-note {
   font-size: 13px;
   color: var(--text-soft);

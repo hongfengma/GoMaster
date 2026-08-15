@@ -25,14 +25,35 @@ except Exception:  # rag 模块缺失时优雅降级，不影响主流程
     _rag_retrieve = None
 
 
+def _full_chat_url(base_url: str) -> str:
+    """把「OpenAI 兼容 base_url」规范化为完整 chat completions 端点。
+
+    兼容以下写法：
+      - https://api.deepseek.com/v1/chat/completions  → 原样返回
+      - https://api.deepseek.com/v1                  → 补 /chat/completions
+      - http://localhost:11434/v1                    → 补 /chat/completions（Ollama）
+    """
+    base_url = (base_url or "").strip().rstrip("/")
+    if base_url.endswith("/chat/completions"):
+        return base_url
+    return base_url + "/chat/completions"
+
+
 def _call_deepseek(system: str, user: str, max_tokens=800, temperature=0.1,
-                   retries=2):
-    """调用 DeepSeek。对空内容/瞬时错误/非法坐标自动重试或抛异常，由上层 fallback。"""
+                   retries=2, llm=None):
+    """调用大模型（默认 DeepSeek，可由 llm 覆盖 base_url/api_key/model）。
+
+    对空内容/瞬时错误/非法坐标自动重试或抛异常，由上层 fallback。
+    """
+    llm = llm or {}
+    base_url = llm.get("base_url") or DEEPSEEK_URL
+    api_key = llm.get("api_key") or DEEPSEEK_API_KEY
+    model = llm.get("model") or DEEPSEEK_MODEL
     last_err = None
     for attempt in range(retries + 1):
         try:
             payload = {
-                "model": DEEPSEEK_MODEL,
+                "model": model,
                 "messages": [
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},
@@ -43,10 +64,10 @@ def _call_deepseek(system: str, user: str, max_tokens=800, temperature=0.1,
             }
             data = json.dumps(payload).encode("utf-8")
             req = urllib.request.Request(
-                DEEPSEEK_URL,
+                _full_chat_url(base_url),
                 data=data,
                 headers={
-                    "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                    "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                 },
             )
@@ -143,7 +164,7 @@ def _fallback_explain(move_no, color_cn, actual_gtp, best_gtp,
 def explain_move(move_no, color_cn, actual_sgf, best_sgf,
                  ai_wr, actual_wr, delta, best_pv_gtp, size,
                  recent_moves_sgf, level=USER_LEVEL, top3=None, phase="中盘",
-                 board_ascii=None):
+                 board_ascii=None, llm=None):
     """生成单手复盘讲解文本（结构化 Markdown，准确性优先）。
 
     参数说明：
@@ -236,7 +257,7 @@ def explain_move(move_no, color_cn, actual_sgf, best_sgf,
         user += f"\n\n【参考资料】（若与本题相关请引用并注明出处，不相关则忽略）\n{rag_text}\n"
 
     try:
-        return _call_deepseek(system, user, max_tokens=700, temperature=0.1)
+        return _call_deepseek(system, user, max_tokens=700, temperature=0.1, llm=llm)
     except Exception:
         return _fallback_explain(move_no, color_cn, actual_sgf, best_sgf,
                                  ai_wr, actual_wr, delta, size, phase=phase,

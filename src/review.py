@@ -44,7 +44,7 @@ def _to_color_wr(wr, color):
 
 def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
                threshold=DEFAULT_THRESHOLD, level=USER_LEVEL,
-               progress_cb=None):
+               progress_cb=None, user_cfg=None):
     with open(sgf_path, "r", encoding="utf-8") as f:
         sgf_text = f.read()
 
@@ -56,7 +56,16 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
 
     print(f"[复盘] 棋盘 {size} 路, 贴目 {komi}, 共 {n} 手, 阈值 {threshold:.0%}")
 
-    eng = KataGoEngine()
+    # KataGo 引擎可配置覆盖（用户设置界面指定本地程序/配置）
+    llm_cfg = None
+    if user_cfg:
+        from userconfig import resolve_katago, llm_section
+        ke, kc, kw = resolve_katago(user_cfg.get("katago_exe"),
+                                    user_cfg.get("katago_cfg"))
+        eng = KataGoEngine(exe=ke, weight=kw, cfg=kc)
+        llm_cfg = llm_section(user_cfg)
+    else:
+        eng = KataGoEngine()
     entries = []
     try:
         for i in range(n):
@@ -181,6 +190,7 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
             top3=e.get("top3", []),
             phase=e.get("phase", "中盘"),
             board_ascii=board_ascii,
+            llm=llm_cfg,
         )
         if progress_cb:
             progress_cb({"type": "explain", "no": e["no"], "explain": e["explain"]})
@@ -188,7 +198,12 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
     report = _build_report(meta, entries, mistakes, threshold, level, max_visits)
     if out_path is None:
         base = os.path.splitext(os.path.basename(sgf_path))[0]
-        out_path = os.path.join(os.path.dirname(sgf_path), f"{base}-复盘报告.md")
+        out_dir = (user_cfg or {}).get("analysis_dir") if user_cfg else None
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+            out_path = os.path.join(out_dir, f"{base}-复盘报告.md")
+        else:
+            out_path = os.path.join(os.path.dirname(sgf_path), f"{base}-复盘报告.md")
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(report)
     print(f"[复盘] 报告已写出: {out_path}")

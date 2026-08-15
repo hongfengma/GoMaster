@@ -15,8 +15,10 @@ interface AppState {
   reportPath: string | null;
   level: string;
   visits: number;
+  showPV: boolean; // 后续推演（变化图）是否在棋盘上显示，默认关
   setLevel: (l: string) => void;
   setVisits: (v: number) => void;
+  togglePV: () => void;
   startReview: (sgf: string) => Promise<void>;
   goToMove: (no: number) => void;
   stop: () => void;
@@ -33,8 +35,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   reportPath: null,
   level: "入门",
   visits: 80,
+  showPV: false,
   setLevel: (l) => set({ level: l }),
   setVisits: (v) => set({ visits: v }),
+  togglePV: () => set((s) => ({ showPV: !s.showPV })),
   startReview: async (sgf) => {
     if (pollTimer) {
       clearTimeout(pollTimer);
