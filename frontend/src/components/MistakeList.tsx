@@ -41,6 +41,9 @@ export default function MistakeList() {
               {e ? sign(e.delta) : "…"}
               {ready ? "" : " · 讲解中"}
             </span>
+            {e?.category && (
+              <div className="mistake-category">{e.category}</div>
+            )}
             {e?.fact_tags && e.fact_tags.length > 0 && (
               <div className="fact-tags">
                 {e.fact_tags.map((t) => (
@@ -48,8 +51,10 @@ export default function MistakeList() {
                     key={t}
                     className={
                       "fact-tag" +
-                      (t.includes("(") && /接不归|空三角|方四|凝形|裂形/.test(t)
+                      (/接不归|自紧气|空三角|方四|凝形|裂形/.test(t)
                         ? " bad"
+                        : /定式偏离|星位|小目|三三|目外|高目|超高目/.test(t)
+                        ? " joseki"
                         : "")
                     }
                   >

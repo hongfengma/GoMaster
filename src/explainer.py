@@ -17,7 +17,7 @@ import time
 import urllib.request
 
 from config import (DEEPSEEK_API_KEY, DEEPSEEK_MODEL, DEEPSEEK_URL, USER_LEVEL)
-from go_board import gtp_to_xy
+from go_board import gtp_to_xy, zone_of_gtp
 
 try:
     from rag import retrieve as _rag_retrieve
@@ -131,23 +131,17 @@ def _fmt_pv(pv_gtp, n=6):
     return " → ".join(out)
 
 
-def _zone_of(gtp, size):
-    """由 GTP 坐标推断盘面区域：角部 / 边上 / 中腹（供 RAG 检索与讲解方位）。"""
-    if not gtp or str(gtp).lower() in ("pass", "resign"):
-        return ""
-    xy = gtp_to_xy(str(gtp).upper(), size)
-    if not xy:
-        return ""
-    x, y = xy  # 0-based
-    if x < 0 or y < 0 or x >= size or y >= size:
-        return ""  # 越界坐标（理论上不该出现）不做区域判断
-    edge = lambda d: min(d, size - 1 - d)
-    ce, re = edge(x), edge(y)
-    if ce <= 2 and re <= 2:
-        return "角部"
-    if ce <= 2 or re <= 2:
-        return "边上"
-    return "中腹"
+def _zone_of(gtp, size, fact_sheet=None):
+    """由 GTP 坐标推断盘面区域：角部 / 边上 / 中腹（供 RAG 检索与讲解方位）。
+
+    优先使用事实单里的 zone；没有时本地计算。区域定义：
+      - 第四线及以下为边/角；
+      - 第五线及以上为中腹。
+    避免把第四线说成中腹。
+    """
+    if fact_sheet and fact_sheet.get("zone"):
+        return fact_sheet["zone"]
+    return zone_of_gtp(gtp, size)
 
 
 def _fallback_explain(move_no, color_cn, actual_gtp, best_gtp,
@@ -191,6 +185,51 @@ def verify_explain(text, fact_sheet):
     return warns
 
 
+def verify_and_correct(content, fact_sheet, llm=None):
+    """LLM 级审核员：检查讲解与事实单是否矛盾，必要时输出修正版（多一次调用）。
+
+    若审核认为无矛盾，返回原 content；若发现坐标/阶段/棋形/定式/区域/变化图等错误，
+    返回修正后的完整讲解。审核失败则优雅降级，返回原文。
+    """
+    if not fact_sheet or not _fact_to_text:
+        return content
+    fact_text = _fact_to_text(fact_sheet)
+    if not fact_text or not content:
+        return content
+
+    v_system = (
+        "你是一名严格的围棋讲解事实审核员。请检查下方的【讲解】是否与【事实单】一致。\n"
+        "重点排查：\n"
+        "1. 坐标引用错误（如把黑棋说成白棋、坐标与描述的棋子不对应、提到事实单里没有的坐标）；\n"
+        "2. 区域概念错误（第四线及以下只能叫角部/边上，不能叫中腹）；\n"
+        "3. 阶段/棋形/定式名称与事实单矛盾；\n"
+        "4. 把【AI 后续主变】变化图里的子当作已经落下的子来讲解；\n"
+        "5. 虚构事实单未列出的棋理或棋谚。\n"
+        "若发现任何矛盾，请直接输出修正后的完整讲解（严格保持原来的 5 个 Markdown 标题分段，"
+        "280 字以内，坐标必须正确且来自事实单）。若讲解与事实单完全一致，"
+        "请仅输出「无矛盾」三个字，不要输出其他内容。"
+    )
+    v_user = (
+        f"【事实单】\n{fact_text}\n\n"
+        f"【讲解】\n{content}\n\n"
+        "请先逐项自检坐标、区域、阶段、棋形/定式、变化图描述是否与事实单一致，"
+        "然后按上面要求输出。"
+    )
+    try:
+        corrected = _call_deepseek(
+            v_system, v_user, max_tokens=700, temperature=0.0, llm=llm)
+        if corrected.startswith("无矛盾"):
+            return content
+        # 简单校验修正结果仍含 5 段标题，否则降级
+        if all(h in corrected for h in (
+                "### 问题定性", "### 关键棋理", "### 推荐点意图",
+                "### 后续推演", "### 不确定点")):
+            return corrected
+    except Exception:
+        pass
+    return content
+
+
 def explain_move(move_no, color_cn, actual_sgf, best_sgf,
                  ai_wr, actual_wr, delta, best_pv_gtp, size,
                  recent_moves_sgf, level=USER_LEVEL, top3=None, phase="中盘",
@@ -212,7 +251,7 @@ def explain_move(move_no, color_cn, actual_sgf, best_sgf,
                           + (f"（后续：{tpv}）" if tpv != "（无）" else ""))
     cand_text = "\n".join(cand_lines) if cand_lines else "（无）"
 
-    zone = _zone_of(actual_sgf, size)
+    zone = _zone_of(actual_sgf, size, fact_sheet)
 
     # —— RAG 知识库检索（增强 query：带 phase + zone + 事实标签，命中更准）——
     rag_text = ""
@@ -244,24 +283,28 @@ def explain_move(move_no, color_cn, actual_sgf, best_sgf,
         f"1. 讲解必须精确、可验证，使用规范棋术语（定式、棋形、手筋、厚薄、势力、眼位、官子、先手/后手等）。\n"
         f"2. 紧扣本手得失，给出「具体棋理 + 局部棋形 + 后续推演」。禁止空泛套话，"
         f"禁止为了通顺而编造棋理或用生活化比喻搪塞（如「好比……」「就像……」）。\n"
-        f"3. 若引用定式、棋谚或棋形：必须来自公认棋理或下方【参考资料】，并说明它在本局面如何体现；"
-        f"不得凭空杜撰名称。若你不确定某条棋理是否适用，必须在「不确定点」里明说，"
-        f"或写「此处建议摆谱验证」，绝不可含糊带过。\n"
+        f"3. 若引用定式、棋谚或棋形：必须来自公认棋理或下方【参考资料】/【事实单】，"
+        f"并说明它在本局面如何体现；不得凭空杜撰名称。若你不确定某条棋理是否适用，"
+        f"必须在「不确定点」里明说，或写「此处建议摆谱验证」，绝不可含糊带过。\n"
         f"4. 描述落点时务必使用方位词（左上/右上/左下/右下/星位/小目/三三/边上/中腹）。\n"
-        f"4.5 若下方出现【事实单】，其内容为程序对棋盘的确定性计算结果"
-        f"（阶段/棋形/定式/形势/后续主变），你必须以其为准；"
-        f"事实单未提及的棋理、定式、棋形名称不得自行断言，"
-        f"若你认为相关请在「不确定点」中明说并建议摆谱验证。\n"
-        f"5. 输出必须严格按下列 5 个 Markdown 标题分段，不要增减段落：\n"
+        f"区域定义以事实单为准：第四线及以下为「角部」或「边上」，第五线及以上才称「中腹」；"
+        f"严禁把四线棋子描述成中腹。\n"
+        f"5. 若下方出现【事实单】，其内容为程序对棋盘的确定性计算结果"
+        f"（阶段/棋形/定式/形势/涉及坐标/后续主变），你必须以其为准；"
+        f"事实单未提及的棋理、定式、棋形名称、具体坐标不得自行断言。"
+        f"讲解中引用的任何坐标，必须来自事实单里的「涉及坐标」「角部已落子」或「实际/推荐点」；"
+        f"禁止凭空编造坐标，禁止把变化图里的坐标当作已落下的子来引用。\n"
+        f"6. 输出必须严格按下列 5 个 Markdown 标题分段，不要增减段落：\n"
         f"### 问题定性\n### 关键棋理\n### 推荐点意图\n### 后续推演\n### 不确定点\n"
-        f"6. 全程使用 Markdown（**加粗**、列表），总篇幅控制在 280 字以内。\n\n"
+        f"7. 全程使用 Markdown（**加粗**、列表），总篇幅控制在 280 字以内。\n\n"
         f"【坐标铁律】本系统所有坐标均采用 GTP 记号：1 个大写英文字母 + 1–2 位数字，"
         f"例如 Q16、D4、K10。你输出中提到的任何落点，都必须是这种格式。"
         f"绝对禁止输出 dd、qq、ddd、ehh、fch 等两位或三位小写字母串。"
         f"如果某个点在脑中是小写两位字母（如 dd），你必须先转换成 GTP（如 D4）再写。"
         f"\n\n【正确示例】Q16、D6、F6、K10、A1、T19。"
         f"【错误示例】dd、qq、ddd、ehh、fch。"
-        f"输出前请自检：每出现一次坐标，必须满足「首字符大写字母 A–T（跳 I）+ 数字」。"
+        f"输出前请自检：每出现一次坐标，必须满足「首字符大写字母 A–T（跳 I）+ 数字」，"
+        f"且该坐标确实对应事实单中提到的棋子或空点，不得张冠李戴。"
     )
 
     board_block = (
@@ -302,6 +345,8 @@ def explain_move(move_no, color_cn, actual_sgf, best_sgf,
 
     try:
         content = _call_deepseek(system, user, max_tokens=700, temperature=0.1, llm=llm)
+        # 模型偶尔把「不确定点」写成「无矛盾」，统一收敛成「无」
+        content = re.sub(r"(?m)^\s*无矛盾\s*$", "无", content)
     except Exception:
         return _fallback_explain(move_no, color_cn, actual_sgf, best_sgf,
                                  ai_wr, actual_wr, delta, size, phase=phase,
@@ -311,4 +356,12 @@ def explain_move(move_no, color_cn, actual_sgf, best_sgf,
         warns = verify_explain(content, fact_sheet)
         if warns:
             content = content.rstrip() + "\n\n> 系统校验提示：" + "；".join(warns)
+
+    # LLM 级审核：多花一次调用，专门揪坐标/区域/变化图等细节矛盾
+    if fact_sheet:
+        content = verify_and_correct(content, fact_sheet, llm=llm)
+        # 再次轻量规则校验，防止修正后仍留痕
+        warns2 = verify_explain(content, fact_sheet)
+        if warns2:
+            content = content.rstrip() + "\n\n> 系统校验提示：" + "；".join(warns2)
     return content

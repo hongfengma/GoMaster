@@ -56,6 +56,15 @@ function Overview() {
   const bigTxt = biggest
     ? `${sideCn}最大偏差出现在第 ${biggest.no} 手，胜率下降约 ${sign(biggest.delta)}。`
     : "（该方暂无失误手）";
+
+  const catCounts: Record<string, number> = {};
+  for (const no of sideMistakeNos) {
+    const e = entries.find((x) => x.no === no);
+    const c = e?.category || "其他";
+    catCounts[c] = (catCounts[c] || 0) + 1;
+  }
+  const catEntries = Object.entries(catCounts).sort((a, b) => b[1] - a[1]);
+
   return (
     <div className="panel overview">
       <h3>本局总览（{sideCn}）</h3>
@@ -70,6 +79,19 @@ function Overview() {
         <span className="v mistake-count">{sideMistakeNos.length} 个</span>
       </div>
       <p className="overview-note">{bigTxt}</p>
+      {catEntries.length > 0 && (
+        <>
+          <h4>{sideCn}失误分类</h4>
+          <div className="cat-stats">
+            {catEntries.map(([cat, cnt]) => (
+              <div className="cat-stat" key={cat}>
+                <span className="cat-name">{cat}</span>
+                <span className="cat-count">{cnt}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
       <h4>{sideCn}失误手列表</h4>
       <MistakeList />
     </div>

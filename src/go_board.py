@@ -156,6 +156,57 @@ def empty_ratio(grid, size):
     return empty / (size * size)
 
 
+def line_to_edge(x: int, y: int, size: int) -> int:
+    """某点距离最近边线的格数（0=第一线，3=第四线，4=第五线…）。"""
+    return min(x, y, size - 1 - x, size - 1 - y)
+
+
+def zone_of_xy(x: int, y: int, size: int) -> str:
+    """由内部坐标判断盘面区域：角部 / 边上 / 中腹。
+
+    规则（与中国围棋通常分法一致，避免把第四线说成中腹）：
+      - 第四线及以下（到最近边线距离 <=3）为边/角；
+      - 其中 x、y 两个方向都在第四线及以下为角部；
+      - 仅一个方向在第四线及以下为边上；
+      - 第五线及以上（到最近边线距离 >=4）为中腹。
+    """
+    d = line_to_edge(x, y, size)
+    if d <= 3:
+        dx = min(x, size - 1 - x)
+        dy = min(y, size - 1 - y)
+        if dx <= 3 and dy <= 3:
+            return "角部"
+        return "边上"
+    return "中腹"
+
+
+def zone_of_gtp(gtp: str, size: int) -> str:
+    """由 GTP 坐标判断盘面区域；非法坐标返回空字符串。"""
+    xy = gtp_to_xy(gtp, size)
+    if not xy:
+        return ""
+    return zone_of_xy(xy[0], xy[1], size)
+
+
+def nearby_stones(grid, x: int, y: int, size: int, radius: int = 2,
+                  color: int = 0):
+    """返回以 (x,y) 为中心、radius 范围内的棋子坐标列表。
+
+    color=0 表示两种颜色都收集；color=1/2 只收集指定颜色。
+    坐标为内部 (x,y)。
+    """
+    out = []
+    for ny in range(max(0, y - radius), min(size, y + radius + 1)):
+        for nx in range(max(0, x - radius), min(size, x + radius + 1)):
+            c = grid[ny][nx]
+            if c == 0:
+                continue
+            if color and c != color:
+                continue
+            out.append((nx, ny))
+    return out
+
+
 def board_to_ascii(moves, size, actual_sgf=None, best_sgf=None):
     """把「某手落子前」的局面渲染成 ASCII 棋盘字符串，供 LLM 建立空间认知。
 

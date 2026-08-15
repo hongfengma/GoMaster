@@ -2,8 +2,27 @@ import { useEffect, useRef, useState } from "react";
 import html2canvas from "html2canvas";
 import { useAppStore } from "../store";
 import { coordToXY, drawBoard } from "../board-utils";
+import type { BoardTag } from "../board-utils";
 import MarkdownView from "./MarkdownView";
 import type { ReviewEntry, StoneColor } from "../types";
+
+const BAD_SHAPE_RE = /接不归|自紧气|凝形|方四|空三角|裂形/;
+const JOSEKI_RE = /定式偏离|星位|小目|三三|目外|高目|超高目/;
+
+function tagsForEntry(e: ReviewEntry, size: number): BoardTag[] {
+  const xy = coordToXY(e.actual_sgf ?? e.actual, size);
+  if (!xy) return [];
+  const tags: BoardTag[] = [];
+  const src = (e.fact_tags || []).slice();
+  if (e.category && !src.includes(e.category)) src.unshift(e.category);
+  for (const text of src.slice(0, 3)) {
+    let kind: BoardTag["kind"] = "category";
+    if (BAD_SHAPE_RE.test(text)) kind = "bad";
+    else if (JOSEKI_RE.test(text)) kind = "joseki";
+    tags.push({ ...xy, text, kind });
+  }
+  return tags;
+}
 
 const pct = (x: number) => (x * 100).toFixed(1) + "%";
 const sign = (x: number) => (x >= 0 ? "+" : "") + (x * 100).toFixed(1) + "%";
@@ -48,7 +67,9 @@ function ReportBoard({ entry, size }: { entry: ReviewEntry; size: number }) {
           v !== null
       );
 
-    drawBoard(ctx, { size, margin, cell, stones, highlight, pv });
+    const tags = tagsForEntry(entry, size);
+
+    drawBoard(ctx, { size, margin, cell, stones, highlight, pv, tags });
   }, [entry, size]);
   return <canvas ref={ref} className="report-board-canvas" />;
 }
@@ -162,6 +183,25 @@ export default function ReportView({ onClose }: { onClose: () => void }) {
                   第 {e.no} 手（{cn}方）　实际 <b>{e.actual}</b> · 推荐{" "}
                   <b className="best">{e.best}</b>
                 </div>
+                {e.fact_tags && e.fact_tags.length > 0 && (
+                  <div className="report-tags">
+                    {e.fact_tags.map((t) => (
+                      <span
+                        key={t}
+                        className={
+                          "report-tag" +
+                          (BAD_SHAPE_RE.test(t)
+                            ? " bad"
+                            : JOSEKI_RE.test(t)
+                            ? " joseki"
+                            : "")
+                        }
+                      >
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="report-card-explain">
                 <div className="kv">

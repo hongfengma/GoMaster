@@ -77,6 +77,13 @@ export interface PvStone {
   order: number; // 1 起；1 为 AI 推荐点（绿圈）
 }
 
+export interface BoardTag {
+  x: number; // 0-based 列
+  y: number; // 0-based 行
+  text: string;
+  kind?: "bad" | "joseki" | "category"; // 决定标签颜色
+}
+
 export interface DrawData {
   size: number;
   margin: number;
@@ -84,6 +91,7 @@ export interface DrawData {
   stones: Stone[];
   highlight?: XY; // 当前手实际落子红圈
   pv?: PvStone[]; // 推荐后续变化（带序号黑白子）
+  tags?: BoardTag[]; // 事实标签（画在棋盘对应坐标旁）
 }
 
 export function drawBoard(ctx: CanvasRenderingContext2D, d: DrawData): void {
@@ -196,5 +204,56 @@ export function drawBoard(ctx: CanvasRenderingContext2D, d: DrawData): void {
       ctx.textBaseline = "middle";
       ctx.fillText(String(p.order), x, y);
     }
+  }
+
+  // 事实标签：画在实际落子附近，颜色按 kind 区分
+  if (d.tags && d.tags.length) {
+    const tagHeight = Math.max(14, Math.floor(d.cell * 0.30));
+    const fontSize = Math.max(10, Math.floor(d.cell * 0.20));
+    const padX = Math.floor(d.cell * 0.10);
+    const offsetX = d.cell * 0.42;
+    const offsetY = -d.cell * 0.50;
+    const lineGap = tagHeight + 2;
+
+    ctx.font = `bold ${fontSize}px var(--sans), sans-serif`;
+    ctx.textBaseline = "middle";
+
+    d.tags.forEach((t, idx) => {
+      const bx = d.margin + t.x * d.cell;
+      const by = d.margin + t.y * d.cell;
+      const tx = bx + offsetX;
+      const ty = by + offsetY + idx * lineGap;
+
+      const color =
+        t.kind === "bad"
+          ? "#c62828"
+          : t.kind === "joseki"
+          ? "#2e7d32"
+          : "#1565c0";
+      const textW = ctx.measureText(t.text).width;
+      const w = textW + padX * 2;
+      const h = tagHeight;
+      const x0 = tx - padX;
+      const y0 = ty - h / 2;
+      const r = 4;
+
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(x0 + r, y0);
+      ctx.lineTo(x0 + w - r, y0);
+      ctx.quadraticCurveTo(x0 + w, y0, x0 + w, y0 + r);
+      ctx.lineTo(x0 + w, y0 + h - r);
+      ctx.quadraticCurveTo(x0 + w, y0 + h, x0 + w - r, y0 + h);
+      ctx.lineTo(x0 + r, y0 + h);
+      ctx.quadraticCurveTo(x0, y0 + h, x0, y0 + h - r);
+      ctx.lineTo(x0, y0 + r);
+      ctx.quadraticCurveTo(x0, y0, x0 + r, y0);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = "#fff";
+      ctx.textAlign = "left";
+      ctx.fillText(t.text, tx, ty);
+    });
   }
 }

@@ -212,10 +212,17 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
             ]
             # 挂载事实单与「事实标签」（供前端失误项展示，让讲解有据可查）
             entry["fact"] = fact
+            entry["category"] = fact.get("category") if fact else ""
             if fact:
                 _jt = fact.get("joseki") or {}
-                entry["fact_tags"] = list(fact.get("shape_bad", [])) + (
-                    [_jt["matched"]] if _jt.get("matched") else [])
+                tags = list(fact.get("shape_bad", []))
+                if _jt.get("matched"):
+                    tags.append(_jt["matched"])
+                if _jt.get("deviation"):
+                    tags.append("定式偏离")
+                if fact.get("category"):
+                    tags.append(fact["category"])
+                entry["fact_tags"] = tags
             else:
                 entry["fact_tags"] = []
             entries.append(entry)
@@ -337,6 +344,19 @@ def _build_report(meta, entries, mistakes, threshold, level, max_visits):
             f"（胜率下降约 {biggest['delta']*100:.1f} 个百分点）。\n"
         )
 
+    # 失误分类统计
+    cats = {}
+    for e in mistakes:
+        c = e.get("category") or "其他"
+        cats[c] = cats.get(c, 0) + 1
+    if cats:
+        lines.append("## 失误分类统计\n")
+        lines.append("| 分类 | 次数 |")
+        lines.append("| --- | --- |")
+        for c, cnt in sorted(cats.items(), key=lambda x: -x[1]):
+            lines.append(f"| {c} | {cnt} |")
+        lines.append("")
+
     lines.append("## 逐手讲解\n")
     for e in mistakes:
         cn = "黑" if e["color"] == "B" else "白"
@@ -347,6 +367,8 @@ def _build_report(meta, entries, mistakes, threshold, level, max_visits):
         lines.append(f"| AI 推荐 | **{e['best']}** |")
         lines.append(f"| 胜率变化 | {e['ai_wr']*100:.1f}% → {e['actual_wr']*100:.1f}%"
                      f"（下降 {e['delta']*100:.1f} 个百分点） |")
+        if e.get("category"):
+            lines.append(f"| 失误分类 | {e['category']} |")
         tags = e.get("fact_tags") or []
         if tags:
             lines.append(f"| 事实标签 | {', '.join(tags)} |")

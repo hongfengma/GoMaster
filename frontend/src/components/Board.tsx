@@ -1,7 +1,28 @@
 import { useEffect, useRef, useState } from "react";
 import { useAppStore } from "../store";
 import { coordToXY, drawBoard } from "../board-utils";
+import type { BoardTag } from "../board-utils";
 import type { ReviewEntry, StoneColor } from "../types";
+
+const BAD_SHAPE_RE = /接不归|自紧气|凝形|方四|空三角|裂形/;
+const JOSEKI_RE = /定式偏离|星位|小目|三三|目外|高目|超高目/;
+
+function tagsForEntry(e: ReviewEntry | undefined, size: number): BoardTag[] {
+  if (!e) return [];
+  const xy = coordToXY(e.actual_sgf ?? e.actual, size);
+  if (!xy) return [];
+  const tags: BoardTag[] = [];
+  // 优先显示坏形、定式偏离、分类，最多 3 个避免过度遮挡
+  const src = (e.fact_tags || []).slice();
+  if (e.category && !src.includes(e.category)) src.unshift(e.category);
+  for (const text of src.slice(0, 3)) {
+    let kind: BoardTag["kind"] = "category";
+    if (BAD_SHAPE_RE.test(text)) kind = "bad";
+    else if (JOSEKI_RE.test(text)) kind = "joseki";
+    tags.push({ ...xy, text, kind });
+  }
+  return tags;
+}
 
 export default function Board() {
   const size = useAppStore((s) => s.meta?.size ?? 0);
@@ -66,7 +87,12 @@ export default function Board() {
       }
     }
 
-    drawBoard(ctx, { size, margin, cell, stones, highlight, pv });
+    const currentEntry = current >= 1
+      ? entries.find((x) => x.no === current)
+      : undefined;
+    const tags = tagsForEntry(currentEntry, size);
+
+    drawBoard(ctx, { size, margin, cell, stones, highlight, pv, tags });
   }, [size, entries, current, showPV]);
 
   // 窗口大小变化时重绘棋盘，避免初始尺寸过小或用户拉伸后不变

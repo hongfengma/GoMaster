@@ -574,6 +574,79 @@ body {
   color: #a32d2d;
   border-color: #f0c1c1;
 }
+.fact-tag.joseki {
+  background: #eaf8ee;
+  color: #2e7d32;
+  border-color: #c8e6c9;
+}
+
+/* 失误分类统计 */
+.cat-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 14px;
+}
+.cat-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff7ec;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 3px 10px;
+  font-size: 13px;
+}
+.cat-stat .cat-name {
+  color: var(--text);
+}
+.cat-stat .cat-count {
+  min-width: 18px;
+  text-align: center;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 9px;
+  padding: 1px 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* 失误项主分类 */
+.mistake-category {
+  width: 100%;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* 报告中的事实标签 */
+.report-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  justify-content: center;
+  margin-top: 6px;
+  max-width: 320px;
+}
+.report-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #eef4ea;
+  color: #3b6d11;
+  border: 1px solid #cfe0bf;
+}
+.report-tag.bad {
+  background: #fdecec;
+  color: #a32d2d;
+  border-color: #f0c1c1;
+}
+.report-tag.joseki {
+  background: #eaf8ee;
+  color: #2e7d32;
+  border-color: #c8e6c9;
+}
 
 /* ---------- Markdown 讲解 ---------- */
 .explain-empty {
