@@ -242,6 +242,50 @@ body {
   color: var(--text-soft);
 }
 
+/* ---------- 视角切换（黑方/白方） ---------- */
+.perspective-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 14px;
+  box-shadow: var(--shadow);
+}
+.perspective-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.seg {
+  display: inline-flex;
+  background: rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px;
+}
+.seg-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 5px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.seg-btn:hover {
+  color: var(--text);
+}
+.seg-btn.active {
+  background: var(--accent, #1faa59);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+
 /* ---------- 胜率曲线 ---------- */
 .winrate-panel .wr-sub {
   font-size: 12px;

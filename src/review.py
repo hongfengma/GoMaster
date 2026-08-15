@@ -191,6 +191,7 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
                 "move": i + 1,
                 "wr": wr_black,
                 "is_mistake": delta >= threshold,
+                "color": color,  # 该手落子方，供前端按视角过滤失误点/列表
             })
             flag = " ⚠失误" if delta >= threshold else ""
             print(f"  第{i+1}手({color}): 实际 {actual_gtp} / 推荐 {best_gtp} | "

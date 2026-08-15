@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Meta, ReviewEntry, Snapshot, TaskStatus, WinRatePoint } from "./types";
+import type { Meta, ReviewEntry, Snapshot, TaskStatus, WinRatePoint, StoneColor } from "./types";
 import { startAnalyze, getSnapshot } from "./api";
 
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
@@ -17,6 +17,8 @@ interface AppState {
   level: string;
   visits: number;
   showPV: boolean; // 后续推演（变化图）是否在棋盘上显示，默认关
+  perspective: StoneColor; // 胜率曲线与失误列表的查看视角："B"黑方 / "W"白方
+  setPerspective: (p: StoneColor) => void;
   setLevel: (l: string) => void;
   setVisits: (v: number) => void;
   togglePV: () => void;
@@ -38,6 +40,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   level: "入门",
   visits: 80,
   showPV: false,
+  perspective: "B",
+  setPerspective: (p) => set({ perspective: p }),
   setLevel: (l) => set({ level: l }),
   setVisits: (v) => set({ visits: v }),
   togglePV: () => set((s) => ({ showPV: !s.showPV })),

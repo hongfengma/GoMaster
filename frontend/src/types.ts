@@ -56,4 +56,5 @@ export interface WinRatePoint {
   move: number; // 手序（1 起）
   wr: number | null; // 黑方视角胜率 0..1，null 表示该手分析缺失
   is_mistake: boolean;
+  color: StoneColor; // 该手落子方（"B" 黑 / "W" 白），供视角过滤
 }

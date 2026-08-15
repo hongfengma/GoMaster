@@ -12,21 +12,53 @@ import type { ReviewEntry } from "./types";
 
 const sign = (x: number) => (x >= 0 ? "+" : "") + (x * 100).toFixed(1) + "%";
 
+function PerspectiveBar() {
+  const perspective = useAppStore((s) => s.perspective);
+  const setPerspective = useAppStore((s) => s.setPerspective);
+  return (
+    <div className="perspective-bar">
+      <span className="perspective-label">查看视角</span>
+      <div className="seg">
+        <button
+          className={"seg-btn" + (perspective === "B" ? " active" : "")}
+          onClick={() => setPerspective("B")}
+        >
+          黑方
+        </button>
+        <button
+          className={"seg-btn" + (perspective === "W" ? " active" : "")}
+          onClick={() => setPerspective("W")}
+        >
+          白方
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function Overview() {
   const meta = useAppStore((s) => s.meta);
   const entries = useAppStore((s) => s.entries);
   const mistakes = useAppStore((s) => s.mistakes);
+  const perspective = useAppStore((s) => s.perspective);
   if (!meta) return null;
-  const biggest = entries.reduce<ReviewEntry | null>(
+  // 仅统计「当前视角方」的失误手
+  const sideMistakeNos = mistakes.filter((no) => {
+    const e = entries.find((x) => x.no === no);
+    return e && e.color === perspective;
+  });
+  const sideEntries = entries.filter((e) => e.color === perspective);
+  const biggest = sideEntries.reduce<ReviewEntry | null>(
     (acc, e) => (!acc || e.delta > acc.delta ? e : acc),
     null
   );
+  const sideCn = perspective === "B" ? "黑方" : "白方";
   const bigTxt = biggest
-    ? `最大偏差出现在第 ${biggest.no} 手（${biggest.color === "B" ? "黑" : "白"}），胜率下降约 ${sign(biggest.delta)}。`
-    : "（分析中…）";
+    ? `${sideCn}最大偏差出现在第 ${biggest.no} 手，胜率下降约 ${sign(biggest.delta)}。`
+    : "（该方暂无失误手）";
   return (
     <div className="panel overview">
-      <h3>本局总览</h3>
+      <h3>本局总览（{sideCn}）</h3>
       <div className="kv">
         <span className="k">总手数</span>
         <span className="v">{meta.total_moves}</span>
@@ -34,11 +66,11 @@ function Overview() {
         <span className="v">
           {entries.length} / {meta.total_moves}
         </span>
-        <span className="k">失误手</span>
-        <span className="v mistake-count">{mistakes.length} 个</span>
+        <span className="k">{sideCn}失误手</span>
+        <span className="v mistake-count">{sideMistakeNos.length} 个</span>
       </div>
       <p className="overview-note">{bigTxt}</p>
-      <h4>失误手列表</h4>
+      <h4>{sideCn}失误手列表</h4>
       <MistakeList />
     </div>
   );
@@ -84,6 +116,7 @@ export default function App() {
             <Navigator />
           </div>
           <div className="right">
+            <PerspectiveBar />
             {winrates.length > 0 && status === "done" && (
               <WinRateChart points={winrates} onSelect={goToMove} />
             )}

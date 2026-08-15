@@ -6,16 +6,22 @@ export default function MistakeList() {
   const mistakes = useAppStore((s) => s.mistakes);
   const entries = useAppStore((s) => s.entries);
   const goToMove = useAppStore((s) => s.goToMove);
+  const perspective = useAppStore((s) => s.perspective);
 
-  if (!mistakes.length) {
+  // 仅展示「当前视角方」的失误手
+  const sideNos = mistakes.filter((no) => {
+    const e = entries.find((x) => x.no === no);
+    return e && e.color === perspective;
+  });
+  if (!sideNos.length) {
     return (
       <div className="mistake-list">
-        <div className="pending">（暂无可讲解的失误手）</div>
+        <div className="pending">（该方暂无可讲解的失误手）</div>
       </div>
     );
   }
   // 按手序（从小到大）排列，便于用户顺着棋谱顺序回顾失误手
-  const ordered = [...mistakes].sort((a, b) => a - b);
+  const ordered = [...sideNos].sort((a, b) => a - b);
   return (
     <div className="mistake-list">
       {ordered.map((no) => {
