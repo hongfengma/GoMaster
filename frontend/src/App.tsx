@@ -7,6 +7,7 @@ import InfoPanel from "./components/InfoPanel";
 import MistakeList from "./components/MistakeList";
 import Settings from "./components/Settings";
 import ReportView from "./components/ReportView";
+import WinRateChart from "./components/WinRateChart";
 import type { ReviewEntry } from "./types";
 
 const sign = (x: number) => (x >= 0 ? "+" : "") + (x * 100).toFixed(1) + "%";
@@ -47,6 +48,8 @@ export default function App() {
   const meta = useAppStore((s) => s.meta);
   const status = useAppStore((s) => s.status);
   const error = useAppStore((s) => s.error);
+  const winrates = useAppStore((s) => s.winrates);
+  const goToMove = useAppStore((s) => s.goToMove);
   const [showSettings, setShowSettings] = useState(false);
   const [showReport, setShowReport] = useState(false);
 
@@ -81,6 +84,9 @@ export default function App() {
             <Navigator />
           </div>
           <div className="right">
+            {winrates.length > 0 && status === "done" && (
+              <WinRateChart points={winrates} onSelect={goToMove} />
+            )}
             <InfoPanel />
             <Overview />
           </div>

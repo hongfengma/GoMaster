@@ -46,7 +46,14 @@ export interface Snapshot {
   meta?: Meta;
   entries: ReviewEntry[];
   mistakes: number[];
+  winrates?: WinRatePoint[];
   error?: string;
   report_path?: string;
   created_at?: string;
+}
+
+export interface WinRatePoint {
+  move: number; // 手序（1 起）
+  wr: number | null; // 黑方视角胜率 0..1，null 表示该手分析缺失
+  is_mistake: boolean;
 }

@@ -42,6 +42,36 @@ def _to_color_wr(wr, color):
     return wr if color == "B" else 1.0 - wr
 
 
+# ---------------------------------------------------------------------------
+# 分析中缓存：相同局面不重复调用 KataGo。
+# 键覆盖 moves/turn/size/komi/max_visits/神经网络；server 进程常驻，因此：
+#   - 相邻手天然复用（第 i 手「之后」= 第 i+1 手「之前」）
+#   - 同一棋谱重复复盘直接全命中
+# 19 路长局提速明显。
+# ---------------------------------------------------------------------------
+_ANALYSIS_CACHE: dict = {}
+
+
+def _analyze_cached(eng, moves, turn, size, komi, max_visits, nn_key):
+    key = (
+        tuple((c, m) for c, m in moves),
+        int(turn),
+        int(size),
+        float(komi),
+        int(max_visits),
+        str(nn_key),
+    )
+    hit = _ANALYSIS_CACHE.get(key)
+    if hit is not None:
+        return hit
+    resp = eng.analyze(moves, turn, size=size, komi=komi, max_visits=max_visits)
+    # 简易上限保护，避免极长对局反复重跑撑爆内存
+    if len(_ANALYSIS_CACHE) > 40000:
+        _ANALYSIS_CACHE.clear()
+    _ANALYSIS_CACHE[key] = resp
+    return resp
+
+
 def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
                threshold=DEFAULT_THRESHOLD, level=USER_LEVEL,
                progress_cb=None, user_cfg=None):
@@ -68,6 +98,7 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
     else:
         eng = KataGoEngine()
     entries = []
+    winrates = []  # 全局胜率曲线：每手落子后的黑方视角胜率序列
     # 棋盘状态（仅记录落子，用于给每个 entry 附带「该手之后完整局面」，
     # 供前端报告视图直接绘制棋盘图例，无需前端重建）。
     board_state = [[None] * size for _ in range(size)]
@@ -78,8 +109,8 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
                             for j in range(i)]
             # 1) 分析“该手之前”的局面 -> 最佳选点 & 其胜率（该方视角）
             try:
-                resp_before = eng.analyze(before_moves, i, size=size,
-                                          komi=komi, max_visits=max_visits)
+                resp_before = _analyze_cached(
+                    eng, before_moves, i, size, komi, max_visits, eng.weight)
             except Exception as e:
                 print(f"  第{i+1}手 before 分析失败: {e}，跳过")
                 continue
@@ -115,12 +146,15 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
             # 2) 分析“实际落子之后”的局面 -> 取根节点胜率（黑视角）-> 换算该方实际胜率
             after_moves = before_moves + [[color, _sgfcoord_to_gtp(sgf_coord, size)]]
             try:
-                resp_after = eng.analyze(after_moves, i + 1, size=size,
-                                         komi=komi, max_visits=max_visits)
-                opp_wr = resp_after.get("rootInfo", {}).get("winrate", ai_wr)
+                resp_after = _analyze_cached(
+                    eng, after_moves, i + 1, size, komi, max_visits, eng.weight)
+                root_wr = resp_after.get("rootInfo", {}).get("winrate")
+                opp_wr = root_wr if root_wr is not None else ai_wr
             except Exception as e:
                 print(f"  第{i+1}手 after 分析异常: {e}")
                 opp_wr = ai_wr
+                root_wr = None
+            wr_black = float(root_wr) if root_wr is not None else None
             # KataGo winrate 为黑视角，统一转换到当前落子方视角
             actual_wr = _to_color_wr(opp_wr, color) if opp_wr is not None else ai_wr
             delta = ai_wr - actual_wr
@@ -140,6 +174,7 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
                 "ai_wr": ai_wr,
                 "actual_wr": actual_wr,
                 "delta": delta,
+                "wr_black": wr_black,  # 该手落子后「黑方视角」胜率，供全局胜率曲线
             }
             # 把当前手落子写入棋盘状态，并附带「该手之后完整局面」供报告图例绘制
             _axy = gtp_to_xy(actual_gtp, size)
@@ -152,6 +187,11 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
                 if board_state[y][x]
             ]
             entries.append(entry)
+            winrates.append({
+                "move": i + 1,
+                "wr": wr_black,
+                "is_mistake": delta >= threshold,
+            })
             flag = " ⚠失误" if delta >= threshold else ""
             print(f"  第{i+1}手({color}): 实际 {actual_gtp} / 推荐 {best_gtp} | "
                   f"胜率 {ai_wr*100:.1f}%→{actual_wr*100:.1f}% (差{delta*100:+.1f}%){flag}")
@@ -232,6 +272,7 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
             "total_moves": n,
         },
         "entries": entries,
+        "winrates": winrates,
         "mistakes": [e["no"] for e in mistakes],
         "threshold": threshold,
         "level": level,

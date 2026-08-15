@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Meta, ReviewEntry, Snapshot, TaskStatus } from "./types";
+import type { Meta, ReviewEntry, Snapshot, TaskStatus, WinRatePoint } from "./types";
 import { startAnalyze, getSnapshot } from "./api";
 
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
@@ -10,6 +10,7 @@ interface AppState {
   meta: Meta | null;
   entries: ReviewEntry[];
   mistakes: number[];
+  winrates: WinRatePoint[];
   current: number;
   error: string | null;
   reportPath: string | null;
@@ -30,6 +31,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   meta: null,
   entries: [],
   mistakes: [],
+  winrates: [],
   current: 0,
   error: null,
   reportPath: null,
@@ -50,6 +52,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       meta: null,
       entries: [],
       mistakes: [],
+      winrates: [],
       current: 0,
       error: null,
       reportPath: null,
@@ -89,6 +92,7 @@ async function poll() {
       meta: d.meta ?? s.meta,
       entries: d.entries ?? s.entries,
       mistakes: (d.mistakes ?? []).slice().sort((a, b) => a - b),
+      winrates: d.winrates ?? s.winrates,
       error: d.error ?? null,
       reportPath: d.report_path ?? null,
     }));

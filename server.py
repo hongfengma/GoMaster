@@ -136,6 +136,7 @@ def run_task(task_id, sgf_path, visits, threshold, level):
                 res = event["result"]
                 t["meta"] = res["meta"]
                 t["mistakes"] = res["mistakes"]
+                t["winrates"] = res.get("winrates", [])
                 t["report_path"] = res["report_path"]
 
     with tasks_lock:
@@ -181,7 +182,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/version":
             self._send(200, {
                 "status": "ok",
-                "version": "0.9.5",
+                "version": "0.9.6",
                 "cwd": os.getcwd(),
             })
             return
@@ -205,6 +206,7 @@ class Handler(BaseHTTPRequestHandler):
                     "meta": t.get("meta"),
                     "entries": t["entries"],
                     "mistakes": t.get("mistakes", []),
+                    "winrates": t.get("winrates", []),
                     "error": t.get("error"),
                     "report_path": t.get("report_path"),
                     "created_at": t.get("created_at"),
