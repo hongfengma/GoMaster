@@ -1,45 +1,35 @@
-# 围棋教练 AI 复盘 · v0.7.5 交付总览
+# 围棋教练 AI 复盘 · v1.1.0 交付总览
 
-> 时间：2026-08-14  |  范围：本机实测交互 + Electron 桌面打包
+> 时间：2026-08-15  |  范围：解读准确性深化 + 定式库/Verifier/标签上盘/分类统计
 
 ## 一、当前状态
 
-v0.7.5 已修复 v0.7.4 最顽固的「新 exe 仍显示旧界面」问题，核心改动是 **Electron 外壳自动检测并避开已被占用的 8765 端口**，同时棋盘新增窗口 resize 监听、后端新增 `/api/version` 用于调试。
+v1.1.0 针对实测反馈的「坐标引用错误」「四线被误称为中腹」等问题，做了四层深化：
 
-## 二、v0.7.5 关键修复
+1. **坐标与区域锚定**：事实单输出「涉及坐标」「区域（角/边/中腹）」，并在 prompt 中强制 LLM 只能引用这些坐标，四线及以下不再被说成中腹。
+2. **定式库 + 偏差检测**：本地内置常见星位/小目/三三/目外/高目定式库，识别角部定式基底与挂角关系，当前手若不在常见应手集合内则标记「定式偏离」。
+3. **LLM 级 Verifier**：每手讲解后多一次审核调用，自动检查坐标、区域、阶段、棋形、定式、变化图混淆等矛盾，必要时输出修正版。
+4. **事实标签上盘 + 失误分类统计**：棋形/定式/分类标签直接画在棋盘图例与报告里；总览面板新增当前视角方的失误分类统计。
 
-1. **动态端口（根治旧后端残留）**
-   - `frontend/electron/main.cjs`：启动前先探测 8765 是否空闲；若被旧实例占用，自动递增到 8766/8767… 再启动新后端、从新端口加载前端。
-   - 这彻底避免了「新 exe 启动后仍连到旧后端、显示旧界面/旧坐标」的问题。
+## 二、关键改动文件
 
-2. **棋盘响应式增强**
-   - `frontend/src/components/Board.tsx`：新增 `window.resize` 监听，窗口大小变化后自动重绘棋盘。
-   - 棋盘尺寸保持 `window.innerWidth * 0.6`，最小 600px，最大 860px。
-
-3. **后端版本标识**
-   - `server.py` 新增 `GET /api/version`，返回 `{version:"0.7.5", cwd:...}`，便于用户开 DevTools 确认连接的是哪个后端。
-
-4. **代码层面坐标问题已确认修复**
-   - `src/review.py`：`actual` = 大写 GTP（如 `G7`），`actual_sgf` = SGF（如 `ge`）；`best` 同样 uppercase。
-   - 前端 `InfoPanel` / `MistakeList` 直接显示 `e.actual` / `e.best`。
-   - `Board.tsx` 用 `actual_sgf` 绘制棋子。
+- `src/go_board.py`：新增 `zone_of_xy/gtp`、`line_to_edge`、`nearby_stones`；区域定义：四线及以下为边/角，五线及以上为中腹。
+- `src/fact_extractor.py`：棋形输出涉及坐标；扩充 `_JOSEKI_LIBRARY` 与 `_detect_joseki` 偏离检测；新增 `_classify_mistake` 分类；事实单含 `zone`、`best_zone`、`category`、`shape_stones`、`joseki.expected` 等。
+- `src/explainer.py`：系统/用户提示强化坐标铁律与区域铁律；新增 `verify_and_correct`（LLM 级审核+修正，一次额外调用）；统一把「无矛盾」收敛为「无」。
+- `src/review.py`：entry 挂载 `category`；`fact_tags` 增加「定式偏离」与分类；Markdown 报告新增「失误分类统计」与逐手分类/标签。
+- `server.py`：`/api/version` 返回 `1.1.0`。
+- `frontend/src/board-utils.ts`、`Board.tsx`、`ReportView.tsx`：Canvas 绘制事实标签（坏形红 / 定式绿 / 分类蓝）。
+- `frontend/src/App.tsx`、`MistakeList.tsx`、`index.css`、`types.ts`：总览分类统计、分类 chip、样式、类型声明。
+- `frontend/package.json`：版本 `1.1.0`，打包目录 `dist-electron-v110`。
 
 ## 三、产物
 
-- **Windows 免安装 exe**：`frontend/dist-electron-v075/GoMaster-win32-x64/GoMaster.exe`（约 177MB）
-- 运行前需本机已装 Python 3；exe 内嵌 `.env`（DeepSeek Key），**仅限自用，勿外发**。
+- **Windows 免安装 exe**：`frontend/dist-electron-v110/GoMaster-win32-x64/GoMaster.exe`
+- 运行需本机已装 Python 3；exe 内嵌 `.env`（DeepSeek Key），**仅限自用，勿外发**。
 
 ## 四、使用提醒
 
-- **只双击 `dist-electron-v075/.../GoMaster.exe`**。
-- 旧目录 `dist-electron/`、`dist-electron-v072/`、`dist-electron-v073/`、`dist-electron-v074/` 里的 exe 都不要点；建议本机删除这些旧目录。
-- v0.7.5 会自动换端口，无需手动结束旧进程；但为避免资源浪费，打开新 exe 前仍可手动关闭旧 GoMaster 窗口。
-- classic PAT 已在历史对话中泄露，强烈建议去 GitHub Settings → Developer settings → Personal access tokens 中 revoke。
-
-## 五、交付文件
-
-- `frontend/dist-electron-v075/GoMaster-win32-x64/GoMaster.exe`
-- `frontend/electron/main.cjs`
-- `frontend/src/components/Board.tsx`
-- `server.py`
-- `frontend/package.json`
+- 只双击 `frontend/dist-electron-v110/.../GoMaster.exe`。
+- 旧版 `dist-electron-v075/v100` 等目录里的 exe 建议删除，避免误点。
+- LLM 级 Verifier 每失误手多一次 DeepSeek 调用，费用较低但会增加总耗时；后续可在设置里增加开关。
+- classic PAT 已在历史对话中泄露，建议去 GitHub Settings → Developer settings → Personal access tokens 中 revoke。
