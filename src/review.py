@@ -67,6 +67,9 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
     else:
         eng = KataGoEngine()
     entries = []
+    # 棋盘状态（仅记录落子，用于给每个 entry 附带「该手之后完整局面」，
+    # 供前端报告视图直接绘制棋盘图例，无需前端重建）。
+    board_state = [[None] * size for _ in range(size)]
     try:
         for i in range(n):
             color, sgf_coord = moves[i]
@@ -137,6 +140,16 @@ def run_review(sgf_path, out_path=None, max_visits=DEFAULT_MAX_VISITS,
                 "actual_wr": actual_wr,
                 "delta": delta,
             }
+            # 把当前手落子写入棋盘状态，并附带「该手之后完整局面」供报告图例绘制
+            _axy = gtp_to_xy(actual_gtp, size)
+            if _axy:
+                board_state[_axy[1]][_axy[0]] = color
+            entry["stones"] = [
+                {"x": x, "y": y, "color": board_state[y][x]}
+                for y in range(size)
+                for x in range(size)
+                if board_state[y][x]
+            ]
             entries.append(entry)
             flag = " ⚠失误" if delta >= threshold else ""
             print(f"  第{i+1}手({color}): 实际 {actual_gtp} / 推荐 {best_gtp} | "

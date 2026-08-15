@@ -6,6 +6,7 @@ import Navigator from "./components/Navigator";
 import InfoPanel from "./components/InfoPanel";
 import MistakeList from "./components/MistakeList";
 import Settings from "./components/Settings";
+import ReportView from "./components/ReportView";
 import type { ReviewEntry } from "./types";
 
 const sign = (x: number) => (x >= 0 ? "+" : "") + (x * 100).toFixed(1) + "%";
@@ -47,6 +48,7 @@ export default function App() {
   const status = useAppStore((s) => s.status);
   const error = useAppStore((s) => s.error);
   const [showSettings, setShowSettings] = useState(false);
+  const [showReport, setShowReport] = useState(false);
 
   return (
     <div className="app">
@@ -58,9 +60,16 @@ export default function App() {
               导入棋谱 → 逐手复盘 → 看清你与高手之间的那几目棋
             </p>
           </div>
-          <button className="btn settings-btn" onClick={() => setShowSettings(true)}>
-            设置
-          </button>
+          <div className="header-actions">
+            {meta && status === "done" && (
+              <button className="btn" onClick={() => setShowReport(true)}>
+                查看报告
+              </button>
+            )}
+            <button className="btn settings-btn" onClick={() => setShowSettings(true)}>
+              设置
+            </button>
+          </div>
         </div>
       </header>
       <Toolbar />
@@ -82,6 +91,9 @@ export default function App() {
         </div>
       )}
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
+      {showReport && meta && (
+        <ReportView onClose={() => setShowReport(false)} />
+      )}
     </div>
   );
 }

@@ -8,7 +8,7 @@
 //
 // 说明：Python 运行时依赖本机 PATH 中的 python（老马本机已具备）。
 // 打包后 server.py / src / deps / .env 通过 --extra-resource 放到 resources/ 下（asar 外，可写）。
-const { app, BrowserWindow, Menu } = require("electron");
+const { app, BrowserWindow, Menu, ipcMain, dialog } = require("electron");
 const { spawn, spawnSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
@@ -170,4 +170,50 @@ app.on("window-all-closed", () => {
     } catch (_) {}
   }
   if (process.platform !== "darwin") app.quit();
+});
+
+// 导出报告为 PDF：由渲染进程把「报告 HTML（canvas 已转 base64 图片）+ 样式」传过来，
+// 主进程用临时隐藏窗口加载该 HTML 后 printToPDF 存盘。比浏览器 print() 更干净（仅含报告内容）。
+ipcMain.handle("export-report-pdf", async (_evt, { html, css }) => {
+  let win = null;
+  try {
+    win = new BrowserWindow({
+      show: false,
+      webPreferences: { contextIsolation: false, nodeIntegration: false },
+    });
+    const full =
+      `<!doctype html><html><head><meta charset="utf-8">` +
+      `<style>${css || ""}</style></head><body>${html || ""}</body></html>`;
+    await new Promise((resolve, reject) => {
+      win.webContents.once("did-finish-load", resolve);
+      win.webContents.once("did-fail-load", (e, code, desc) => reject(new Error(desc || code)));
+      win.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(full));
+    });
+    // 等待内联 base64 图片解码渲染完成
+    await new Promise((r) => setTimeout(r, 350));
+    const buf = await win.webContents.printToPDF({
+      printBackground: true,
+      landscape: false,
+      pageSize: "A4",
+      margins: { top: 16, bottom: 16, left: 16, right: 16 },
+    });
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      title: "保存复盘报告",
+      defaultPath: "围棋复盘报告.pdf",
+      filters: [{ name: "PDF", extensions: ["pdf"] }],
+    });
+    if (canceled || !filePath) {
+      return { ok: true, path: "" }; // 用户取消，不视为错误
+    }
+    require("fs").writeFileSync(filePath, buf);
+    return { ok: true, path: filePath };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message ? e.message : e) };
+  } finally {
+    if (win) {
+      try {
+        win.destroy();
+      } catch (_) {}
+    }
+  }
 });

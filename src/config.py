@@ -35,28 +35,45 @@ PROJ = os.path.dirname(HERE)
 # 故直接基于 HERE 的上一级定位，开发态=仓库根/deps，打包态=resources/deps，两者通用。
 DEPS = os.path.join(HERE, "..", "deps")
 
-# KataGo 可执行文件：跨平台自动探测（Windows 为 katago.exe，macOS/Linux 为 katago）
-_KATAGO_DIR = os.path.join(DEPS, "katago")
-if os.path.isfile(os.path.join(_KATAGO_DIR, "katago.exe")):
-    KATAGO_EXE = os.path.join(_KATAGO_DIR, "katago.exe")
-elif os.path.isfile(os.path.join(_KATAGO_DIR, "katago")):
-    KATAGO_EXE = os.path.join(_KATAGO_DIR, "katago")
-else:
-    KATAGO_EXE = os.path.join(_KATAGO_DIR, "katago.exe")  # 缺失时保留默认名以便报错定位
+# KataGo 可执行文件：多路径自动探测（按优先级）。
+# 优先级：① 打包内置 deps（开发态/自带分发）② 本机常见安装目录（老马本机 C:/Users/mhf/katago）
+#        ③ 系统 PATH（which katago）。
+# 这样即便打包时不带 deps，也能自动复用本机已装的 KataGo，避免冗余打包。
+import shutil as _shutil
 
-# 权重文件：CPU 无独显机器，首选「小网络」以获得可用速度；缺失时回退大网络。
-# 推荐小网络（CPU 友好，沙箱/本机均可从 katagoarchive.org 下载）：
-#  - g170-b10c128（10 block × 128 ch，~11MB，棋力职业级以上，速度/棋力平衡，默认首选）
-#  - g170-b6c96  （6 block × 96 ch，~3.6MB，极快，棋力约业余初级，最省时备选）
-# 下载直链（放 deps/ 下对应文件名即被自动识别）：
-#   https://katagoarchive.org/g170/neuralnets/g170-b10c128-s197428736-d67404019.bin.gz
-#   https://katagoarchive.org/g170/neuralnets/g170-b6c96-s175395328-d26788732.bin.gz
-#  - katago_b10c384h6nbttflrs 为老马本机既有大网络（GPU 设计），棋力强但 CPU 极慢，作兜底。
+_KATAGO_DIR_CANDIDATES = [
+    os.path.join(DEPS, "katago"),                 # 打包内置 deps
+    os.path.expanduser("~/katago"),               # 通用用户目录
+    r"C:/Users/mhf/katago",                       # 老马本机 Windows
+    "/usr/local/bin",                             # macOS / Linux 常见
+    "/opt/homebrew/bin",                          # Apple Silicon Homebrew
+]
+
+
+def _find_katago_exe():
+    names = ["katago.exe", "katago"]
+    for d in _KATAGO_DIR_CANDIDATES:
+        for n in names:
+            p = os.path.join(d, n)
+            if os.path.isfile(p):
+                return p
+    # 兜底：依赖系统 PATH
+    found = _shutil.which("katago")
+    if found:
+        return found
+    return os.path.join(_KATAGO_DIR_CANDIDATES[0], "katago.exe")  # 缺失时保留默认名以便报错定位
+
+
+KATAGO_EXE = _find_katago_exe()
+
+# 权重文件：多路径探测，小网络优先（CPU 无独显机器速度更快），大网络兜底。
+# g170 系列 = 二进制格式（.bin.gz），适配 KataGo v1.17.1；kata1 系列是旧文本格式，已废弃。
 WEIGHT_CANDIDATES = [
-    # g170 系列 = 二进制格式（.bin.gz），适配 KataGo v1.17.1；kata1 系列是旧文本格式，已废弃。
     os.path.join(DEPS, "g170-b10c128-s197428736-d67404019.bin.gz"),   # 二进制 b10c128（更强，需另下）
     os.path.join(DEPS, "g170-b6c96-s175395328-d26788732.bin.gz"),     # 二进制 b6c96（极快，已就绪）
-    os.path.join(DEPS, "katago_b10c384h6nbttflrs.bin.gz"),            # 二进制大网络（兜底，但 CPU 极慢）
+    os.path.join(DEPS, "katago_b10c384h6nbttflrs.bin.gz"),            # 二进制大网络（deps 兜底）
+    os.path.expanduser("~/katago/b10c384h6nbttflrs.bin.gz"),          # 本机大网络
+    r"C:/Users/mhf/katago/b10c384h6nbttflrs.bin.gz",                  # 老马本机大网络
 ]
 
 
@@ -68,7 +85,22 @@ def _choose_weight():
 
 
 WEIGHT = _choose_weight()
-ANALYSIS_CFG = os.path.join(DEPS, "analysis_example.cfg")
+# 分析配置文件：多路径探测（打包内置 → 本机常见目录）
+_CFG_CANDIDATES = [
+    os.path.join(DEPS, "analysis_example.cfg"),
+    os.path.expanduser("~/katago/analysis_example.cfg"),
+    r"C:/Users/mhf/katago/analysis_example.cfg",
+]
+
+
+def _choose_cfg():
+    for p in _CFG_CANDIDATES:
+        if os.path.isfile(p):
+            return p
+    return _CFG_CANDIDATES[0]
+
+
+ANALYSIS_CFG = _choose_cfg()
 
 # DeepSeek
 # 注意：deepseek-v4-flash 是「推理模型」，会把 max_tokens 预算优先用于思维链(reasoning_content)，

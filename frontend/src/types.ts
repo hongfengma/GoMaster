@@ -15,6 +15,7 @@ export interface ReviewEntry {
   best_sgf?: string; // SGF 坐标（变化图绘制用）；缺失时取 best 兼容旧数据
   best_pv: string[];
   best_pv_sgf: string[]; // SGF 坐标序列
+  stones?: { x: number; y: number; color: StoneColor }[]; // 该手落子后的完整局面（报告图例用）
   top3: Top3Entry[];
   phase: string;
   ai_wr: number; // 0..1，落子方视角
