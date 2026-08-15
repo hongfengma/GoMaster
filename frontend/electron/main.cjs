@@ -179,6 +179,8 @@ ipcMain.handle("export-report-pdf", async (_evt, { html, css }) => {
   try {
     win = new BrowserWindow({
       show: false,
+      width: 1200,
+      height: 1600,
       webPreferences: { contextIsolation: false, nodeIntegration: false },
     });
     const full =
@@ -191,11 +193,13 @@ ipcMain.handle("export-report-pdf", async (_evt, { html, css }) => {
     });
     // 等待内联 base64 图片解码渲染完成
     await new Promise((r) => setTimeout(r, 350));
+    // pageSize 用微米对象可避免部分 Electron 版本字符串解析失败；
+    // margins 置 0 消除 "margins must be <= pageSize" 的校验失败。
     const buf = await win.webContents.printToPDF({
       printBackground: true,
       landscape: false,
-      pageSize: "A4",
-      margins: { top: 16, bottom: 16, left: 16, right: 16 },
+      pageSize: { width: 210000, height: 297000 },
+      margins: { top: 0, bottom: 0, left: 0, right: 0 },
     });
     const { canceled, filePath } = await dialog.showSaveDialog({
       title: "保存复盘报告",
