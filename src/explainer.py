@@ -201,23 +201,29 @@ def verify_explain(text, fact_sheet, size=19):
     if conn.get("connects_groups") and any(k in text for k in ("隔离", "分断", "切断", "断开")):
         warns.append("事实单显示本手为补断/联络，文中却用「隔离/分断/切断」，请以事实单为准")
 
-    # 跨盘关联检测：把相距过远的子说成拆二/配合/压迫等关系
-    coords = _extract_gtp_coords(text)
-    relation_kw = ("拆二", "配合", "联络", "压迫", "扩张", "补断", "连接", "形成")
-    if any(k in text for k in relation_kw) and len(coords) >= 2:
-        for i in range(len(coords)):
-            for j in range(i + 1, len(coords)):
-                a, b = coords[i][1], coords[j][1]
+    # 跨盘关联检测（窗口内显式关联）：仅当「关系词 + 两个坐标」出现在同一分句
+    # 时才判定，避免「实战 O5、推荐 D3」这类正常对比被误判为跨盘拆二。
+    # 关系词限定为必须连接两个点的词，过滤掉「扩张/连接/补断/形成」等单点/模糊表述。
+    relation_kw = ("拆二", "拆三", "配合", "联络", "压迫", "连成", "呼应")
+    clauses = re.split(r"[，。！？；、\n]", text)
+    seen_pairs = set()
+    for cl in clauses:
+        c_in = _extract_gtp_coords(cl)
+        if len(c_in) < 2:
+            continue
+        if not any(k in cl for k in relation_kw):
+            continue
+        for i in range(len(c_in)):
+            for j in range(i + 1, len(c_in)):
+                a, b = c_in[i][1], c_in[j][1]
                 dist = abs(a[0] - b[0]) + abs(a[1] - b[1])
-                if dist > 3:
+                key = tuple(sorted((c_in[i][0], c_in[j][0])))
+                if dist > 3 and key not in seen_pairs:
+                    seen_pairs.add(key)
                     warns.append(
-                        f"事实单未支撑跨盘关联：{coords[i][0]} 与 {coords[j][0]} "
-                        f"相距 {dist} 格，文中却描述拆二/配合/压迫等关系，"
+                        f"事实单未支撑跨盘关联：{c_in[i][0]} 与 {c_in[j][0]} "
+                        f"相距 {dist} 格且同句描述为拆二/配合/压迫等关系，"
                         f"请仅引用事实单内相邻坐标")
-                    break
-            else:
-                continue
-            break
 
     return warns
 
@@ -258,6 +264,11 @@ def verify_and_correct(content, fact_sheet, llm=None):
         corrected = _call_deepseek(
             v_system, v_user, max_tokens=700, temperature=0.0, llm=llm)
         if corrected.startswith("无矛盾"):
+            return content
+        # 兜底保护：若修正结果被「废掉」（含暂不可用/长度骤减），保留原文，
+        # 避免二次校验把正常讲解整段清空。
+        if ("暂不可用" in corrected or "大模型暂不可用" in corrected
+                or len(corrected) < 0.5 * len(content)):
             return content
         # 简单校验修正结果仍含 5 段标题，否则降级
         if all(h in corrected for h in (

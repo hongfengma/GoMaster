@@ -465,9 +465,13 @@ def _analyze_direction(grid, ownership, actual_xy, best_xy, size, color):
             return ("", 0.0)
         own = ownership_at(ownership, xy[0], xy[1], size)
         signed = own if color == "B" else -own
-        if signed > 0.4:
+        # 周围 3 格内无子：尚未开发，不判任一方势力
+        nb = nearby_stones(grid, xy[0], xy[1], size, radius=3)
+        if not nb:
+            return ("空区域（周围无子）", signed)
+        if signed > 0.55:
             return ("己方强势力(扩张/巩固)", signed)
-        elif signed < -0.4:
+        elif signed < -0.55:
             return ("对方强势力(打入/破空/侵消)", signed)
         return ("双方均势/中腹消长", signed)
 
@@ -501,14 +505,17 @@ def _extract_point_fact(grid, ownership, xy, size, color):
     dir_, no = line_of_xy(x, y, size)
     own = ownership_at(ownership, x, y, size)
     signed = own if color == "B" else -own
-    if signed > 0.4:
+    # 周围 3 格内的棋子（用于判断是否与某子真实相邻）
+    nb = nearby_stones(grid, x, y, size, radius=3)
+    if not nb:
+        # 周围无子：属于尚未开发的空区域，不应被描述为任一方势力
+        territory = "空区域（周围无子，属可自由占据的要点，不宜描述为对方势力）"
+    elif signed > 0.55:
         territory = "落入己方强势力（扩张/巩固）"
-    elif signed < -0.4:
+    elif signed < -0.55:
         territory = "落入对方强势力（打入/破空/侵消）"
     else:
         territory = "处于双方均势/中腹消长"
-    # 周围 3 格内的棋子（用于判断是否与某子真实相邻）
-    nb = nearby_stones(grid, x, y, size, radius=3)
     return {
         "zone": zone,
         "line_dir": dir_,
@@ -899,6 +906,14 @@ def _selftest():
     assert jt["role"] in ("定式外/脱先",), f"应识别为定式外, 实得 {jt['role']}"
     assert jt["matched"] is None, f"脱先手不应硬套定式名, 实得 {jt['matched']}"
     print("  [ok] 定式角色-脱先识别（R14 不再误标为二间低挂）")
+
+    # 空区域判定：D3 周围无子时，不应被描述为对方强势力（复现左下空角误判）
+    g5 = [[0] * 19 for _ in range(19)]
+    bf = _extract_point_fact(g5, None, gtp_to_xy("D3", 19), 19, "B")
+    assert "空区域" in bf["territory"], f"D3空角应判空区域, 实得 {bf['territory']}"
+    assert "对方强势力" not in bf["territory"], \
+        f"D3空角不应判对方强势力: {bf['territory']}"
+    print("  [ok] 空区域判定（D3 不被误判为白方强势力）")
 
     print("== selftest passed ==")
 
