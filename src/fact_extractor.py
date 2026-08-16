@@ -7,12 +7,19 @@
     输出一份结构化「事实单 JSON」，LLM 只负责把事实讲成人话。
   - 全部本地 CPU 跑，零 API 成本。
 
+v1.1.2 升级：
+  - 引入 KataGo ownership 整盘领地概率，用于安定度/阶段/方向判断（不再只靠气数）。
+  - 坐标「第 N 线」显式锚定（从最近边向里数、1-based），避免 LLM 数错线。
+  - 定式识别按「首子→挂角方→应手方」角色识别，当前手角色不清时不硬套定式名。
+  - 推荐点也生成事实单（best_fact），约束 LLM 对推荐点的描述，杜绝跨盘拆二幻觉。
+  - 方向/压迫/扩张基于落点 ownership 倾向判定。
+  - 事实标签增加 confidence，前端只标高置信度标签，避免误导。
+
 对外暴露：
   extract_fact(moves, i, size, komi, color, actual_gtp, best_gtp, best_pv,
                resp_before, resp_after, winrates, score_lead=None) -> dict | None
-  fact_to_text(fact) -> str   （把事实单渲染成中文段落，供 prompt 使用）
-
-另含 selftest()：用合成棋盘断言气数/棋形/阶段/定式，不依赖 KataGo/网络。
+  fact_to_text(fact) -> str
+另含 selftest()。
 """
 from go_board import (
     build_grid_from_moves,
@@ -25,6 +32,11 @@ from go_board import (
     zone_of_xy,
     zone_of_gtp,
     nearby_stones,
+    line_of_xy,
+    line_of_gtp,
+    ownership_at,
+    group_ownership,
+    is_stable_group,
 )
 
 
@@ -32,12 +44,11 @@ from go_board import (
 # ① 阶段识别（布局 / 中盘 / 官子）
 # ---------------------------------------------------------------------------
 def detect_phase(move_no, size, grid, score_lead, unsettled, empty_ratio_val):
-    """用「空点比例 + 未安定大龙(气数≤2)」综合判定阶段。
+    """用「空点比例 + 未安定大龙(结合 ownership)」综合判定阶段。
 
-    - 布局：尚未发生战斗（无气数≤2 的棋子群）且盘面尚空，属平和展开。
+    - 布局：尚未发生战斗（无未安定大龙）且盘面尚空，属平和展开。
     - 官子：空点很少且无未安定大龙（大局已定，进入收束）。
     - 中盘：存在未安定大龙（战斗）或大局进入中盘。
-    注：阈值取 2（真·气紧/对杀），避免把开局单子的 4 气误判为战斗。
     """
     if empty_ratio_val < 0.30 and unsettled == 0:
         sl = f"（目差约 {score_lead:+.1f}）" if score_lead is not None else ""
@@ -45,8 +56,26 @@ def detect_phase(move_no, size, grid, score_lead, unsettled, empty_ratio_val):
     if unsettled == 0 and empty_ratio_val > 0.55:
         return "布局", "尚未发生战斗，处于布局展开"
     if unsettled > 0:
-        return "中盘", f"存在 {unsettled} 个气数≤2 的未安定大龙，处于中盘战斗"
+        return "中盘", f"存在 {unsettled} 个未安定大龙，处于中盘战斗"
     return "中盘", "大局进入中盘"
+
+
+def count_unstable(grid, ownership, size):
+    """统计「未安定大龙」数量：结合气数与 ownership 判定（避免厚势被误判）。
+
+    ownership 可用时：气数>=3 或 群内 ownership 均值|>0.85| 视为安定。
+    """
+    visited = set()
+    count = 0
+    for y in range(size):
+        for x in range(size):
+            if grid[y][x] != 0 and (x, y) not in visited:
+                stones, _ = group_and_liberties(grid, x, y, size)
+                visited |= stones
+                stable, _, _ = is_stable_group(grid, ownership, x, y, size)
+                if not stable:
+                    count += 1
+    return count
 
 
 # ---------------------------------------------------------------------------
@@ -111,7 +140,7 @@ def _detect_shapes(grid, x, y, size):
             shape_stones |= {(x, y), (nx, ny)}
             break
 
-    # 好形：拆二（同行/列隔一无子）
+    # 好形：拆二（同行/列隔一无子，距离=2，确保是真实拆二而非远距）
     for dx, dy in ((2, 0), (-2, 0), (0, 2), (0, -2)):
         nx, ny = x + dx, y + dy
         if 0 <= nx < size and 0 <= ny < size and grid[ny][nx] == color:
@@ -125,7 +154,7 @@ def _detect_shapes(grid, x, y, size):
 
 
 # ---------------------------------------------------------------------------
-# ③ 定式识别（角部定式基底 + 挂角关系 + 偏差检测）
+# ③ 定式识别（角部定式基底 + 挂角关系 + 角色识别 + 偏差检测）
 # ---------------------------------------------------------------------------
 def _classify_corner_stone(rx, ry):
     """角点相对坐标 (rx,ry) -> 标准角部着法名（0,0=角点）。"""
@@ -249,27 +278,20 @@ def _joseki_replies(base_type, relation):
     return _JOSEKI_LIBRARY.get((base_type, relation)) or set()
 
 
-def _detect_joseki(moves, upto_i, size, actual_xy):
+def _detect_joseki(moves, upto_i, size, actual_xy, ownership=None):
     """识别该手所属角部的定式基底、挂角关系，并检测是否偏离常见应手。
 
-    返回 {
-        "matched": 名称或 None,
-        "relation": 挂角关系,
-        "step": 角部着手数,
-        "deviation": True/False,
-        "expected": [GTP, ...] 常见应手,
-        "joseki_stones": [GTP, ...] 角部已落子,
-        "note": ...
-    }。
+    关键改进（v1.1.2）：按「首子→挂角方→应手方」角色识别：
+      - 仅把当前手识别为上述角色之一时才给出定式名；
+      - 当前手只是落在角部附近、不在定式序列中时，标记为「定式外/脱先」，
+        绝不硬套定式名（解决 R14 被误标为「二间低挂」等问题）。
+      - 挂角方取「距首子最近的异色子」，而非按落子顺序第一个。
+    返回含 confidence 的 dict。
     """
     empty = {
-        "matched": None,
-        "relation": "",
-        "step": 0,
-        "deviation": False,
-        "expected": [],
-        "joseki_stones": [],
-        "note": "",
+        "matched": None, "relation": "", "role": "", "step": 0,
+        "deviation": False, "expected": [], "joseki_stones": [],
+        "confidence": "低", "note": "",
     }
     if actual_xy is None:
         return {**empty, "note": "无坐标，未识别定式"}
@@ -289,61 +311,101 @@ def _detect_joseki(moves, upto_i, size, actual_xy):
     if len(region) < 2:
         return {**empty, "note": "角部着手过少，未识别定式"}
 
-    first = region[0]
-    frx, fry = abs(first[2][0] - cx), abs(first[2][1] - cy)
-    otype = _classify_corner_stone(frx, fry)
-    if otype is None:
+    # 首子：区域内最早的标准化角部着法
+    first = None
+    for r in region:
+        frx, fry = abs(r[2][0] - cx), abs(r[2][1] - cy)
+        if _classify_corner_stone(frx, fry):
+            first = r
+            break
+    if first is None:
         return {**empty, "note": "首子非标准角部着法"}
+    otype = _classify_corner_stone(
+        abs(first[2][0] - cx), abs(first[2][1] - cy))
+    base_xy = first[2]
+    joseki_stones = [xy_to_gtp(xy[0], xy[1], size) for _, _, xy in region[:6]]
 
-    # 收集角部已落子（前 6 手）
-    joseki_stones = []
-    for _, c, xy in region[:6]:
-        joseki_stones.append(xy_to_gtp(xy[0], xy[1], size))
-
-    # 挂角关系：取第一个异色子相对首子的偏移
+    # 挂角方：与首子异色、距首子最近者
     opp = [r for r in region if r[1] != first[1]]
     relation = ""
-    base_xy = first[2]
     if opp:
+        opp.sort(key=lambda r: abs(r[2][0] - base_xy[0]) + abs(r[2][1] - base_xy[1]))
         ox, oy = opp[0][2]
-        relation = _relation_name(abs(ox - base_xy[0]), abs(oy - base_xy[1]))
+        relation = _relation_name(
+            abs(ox - base_xy[0]), abs(oy - base_xy[1]))
 
     name = otype + ((" · " + relation) if relation else "")
-
-    # 偏差检测：本手相对首子是否落在常见应手集合里
-    deviation = False
-    expected = []
     replies = _joseki_replies(otype, relation) if relation else set()
+
+    # 当前手角色判定
+    is_first = (ax, ay) == tuple(base_xy)
+    is_opp = any((ax, ay) == tuple(r[2]) for r in opp)
+    actual_dx = abs(ax - base_xy[0])
+    actual_dy = abs(ay - base_xy[1])
+
+    role = ""
+    confidence = "低"
+    deviation = False
+    matched_name = None
+    if is_first:
+        role = "首子"
+        confidence = "高"
+        matched_name = otype
+    elif is_opp:
+        role = "挂角"
+        confidence = "高" if relation else "中"
+        matched_name = name
+    else:
+        # 同色应手或异色后续应手：看是否在常见应手集合
+        if replies and (actual_dx, actual_dy) in replies:
+            role = "应手"
+            confidence = "高"
+            matched_name = name
+        elif max(abs(ax - cx), abs(ay - cy)) <= R:
+            role = "定式外/脱先"
+            confidence = "中"
+            deviation = True
+            matched_name = None
+        else:
+            role = "定式外/脱先"
+            confidence = "低"
+            matched_name = None
+
+    # 偏差检测（应手但不在集合内）
+    expected = []
     if replies:
         sign_x = 1 if cx == 0 else -1
         sign_y = 1 if cy == 0 else -1
-        expected = []
         for dx, dy in replies:
             ex = base_xy[0] + sign_x * dx
             ey = base_xy[1] + sign_y * dy
             if 0 <= ex < size and 0 <= ey < size:
                 expected.append(xy_to_gtp(ex, ey, size))
         expected = sorted(set(expected))
-        actual_dx = abs(ax - base_xy[0])
-        actual_dy = abs(ay - base_xy[1])
-        if (actual_dx, actual_dy) not in replies:
-            # 只有当本手确实落在角部激战范围内才判偏离（避免把脱先/远场当成定式偏离）
-            if max(abs(ax - cx), abs(ay - cy)) <= R:
-                deviation = True
+    if role == "应手" and (actual_dx, actual_dy) not in replies:
+        deviation = True
 
-    note = ""
-    if deviation:
-        note = f"本手偏离{otype}+{relation}的常见应手"
+    # note 文案
+    if role == "首子":
+        note = f"角部着法：{otype}"
+    elif role == "挂角":
+        note = f"对 {otype} 的{relation}"
+    elif role == "应手":
+        note = (f"{name} 常见应手" if not deviation
+                else f"本手偏离{name}常见应手")
     else:
-        note = "（常见应手范围内）" if replies else "（定式库暂无该型应手）"
+        note = (f"本手位于 {otype} 角部附近，但不属于该定式序列"
+                f"（定式外/脱先），不强行命名")
 
     return {
-        "matched": name,
+        "matched": matched_name,
         "relation": relation,
+        "role": role,
         "step": len(region),
         "deviation": deviation,
         "expected": expected,
         "joseki_stones": joseki_stones,
+        "confidence": confidence,
         "note": note,
     }
 
@@ -393,6 +455,70 @@ def _detect_connection(grid_after, x, y, size, color):
     return result
 
 
+def _analyze_direction(grid, ownership, actual_xy, best_xy, size, color):
+    """判断实际落子与推荐点的方向/势力倾向（基于落点 ownership）。
+
+    返回 dict：actual/best 的领地归属倾向，以及二者是否落在不同区域。
+    """
+    def _terr(xy):
+        if not xy:
+            return ("", 0.0)
+        own = ownership_at(ownership, xy[0], xy[1], size)
+        signed = own if color == "B" else -own
+        if signed > 0.4:
+            return ("己方强势力(扩张/巩固)", signed)
+        elif signed < -0.4:
+            return ("对方强势力(打入/破空/侵消)", signed)
+        return ("双方均势/中腹消长", signed)
+
+    a_terr, a_own = _terr(actual_xy)
+    b_terr, b_own = _terr(best_xy)
+    diff = ""
+    if actual_xy and best_xy:
+        az = zone_of_xy(*actual_xy, size)
+        bz = zone_of_xy(*best_xy, size)
+        if az != bz:
+            diff = f"实际在「{az}」、推荐在「{bz}」，方向存在偏差"
+    return {
+        "actual_territory": a_terr,
+        "actual_own": round(a_own, 3),
+        "best_territory": b_terr,
+        "best_own": round(b_own, 3),
+        "region_diff": diff,
+    }
+
+
+def _extract_point_fact(grid, ownership, xy, size, color):
+    """为某个落点（实际或推荐）生成轻量事实单（zone/线数/领地倾向）。
+
+    解决「LLM 对推荐点自由发挥、跨盘硬凑拆二」的幻觉：
+    把推荐点的真实空间属性也交给事实单约束。
+    """
+    if not xy:
+        return {}
+    x, y = xy
+    zone = zone_of_xy(x, y, size)
+    dir_, no = line_of_xy(x, y, size)
+    own = ownership_at(ownership, x, y, size)
+    signed = own if color == "B" else -own
+    if signed > 0.4:
+        territory = "落入己方强势力（扩张/巩固）"
+    elif signed < -0.4:
+        territory = "落入对方强势力（打入/破空/侵消）"
+    else:
+        territory = "处于双方均势/中腹消长"
+    # 周围 3 格内的棋子（用于判断是否与某子真实相邻）
+    nb = nearby_stones(grid, x, y, size, radius=3)
+    return {
+        "zone": zone,
+        "line_dir": dir_,
+        "line_no": no,
+        "ownership": round(signed, 3),
+        "territory": territory,
+        "nearby_stones": len(nb),
+    }
+
+
 def _classify_mistake(fact, grid_after, size, actual_xy, best_xy, unsettled):
     """为当前失误手打一个主要分类标签。"""
     jt = fact.get("joseki") or {}
@@ -415,6 +541,10 @@ def _classify_mistake(fact, grid_after, size, actual_xy, best_xy, unsettled):
             if len(libs) <= 2:
                 return "死活/战斗"
 
+    # 方向偏差：实际与推荐落在不同势力区域（ownership 或 zone 差异）
+    direction = fact.get("direction") or {}
+    if direction.get("region_diff"):
+        return "方向/大场偏差"
     if phase == "布局" and actual_xy and best_xy:
         az = zone_of_xy(*actual_xy, size)
         bz = zone_of_xy(*best_xy, size)
@@ -463,6 +593,16 @@ def _strategic_context(moves, i, size, grid_after, score_lead,
     }
 
 
+def _find_move_info(resp, gtp):
+    """从 KataGo 响应 moveInfos 里找某 GTP 坐标对应的候选信息。"""
+    if not resp:
+        return None
+    for info in resp.get("moveInfos", []):
+        if str(info.get("move", "")).upper() == str(gtp).upper():
+            return info
+    return None
+
+
 # ---------------------------------------------------------------------------
 # 事实单渲染（中文段落，供 prompt 使用）
 # ---------------------------------------------------------------------------
@@ -470,11 +610,29 @@ def fact_to_text(fact):
     if not fact:
         return ""
     lines = []
-    lines.append(f"【事实单·系统确定性计算，必须以其为准】")
+    lines.append("【事实单·系统确定性计算，必须以其为准】")
     lines.append(f"- 阶段：{fact['phase']}（{fact.get('phase_reason','')}）")
-    lines.append(f"- 区域：本手 {fact.get('actual','')} 位于「{fact.get('zone','')}」")
-    if fact.get("best") and fact.get("best_zone"):
-        lines.append(f"- 推荐点区域：{fact['best']} 位于「{fact['best_zone']}」")
+
+    # 线数锚定（v1.1.2 新增，杜绝 LLM 数错第几线）
+    if fact.get("line_dir"):
+        lines.append(
+            f"- 本手 {fact.get('actual','')} 位于「{fact['line_dir']}第"
+            f"{fact['line_no']}线」，区域「{fact.get('zone','')}」")
+    else:
+        lines.append(f"- 区域：本手 {fact.get('actual','')} 位于「{fact.get('zone','')}」")
+    if fact.get("best") and fact.get("best_line_dir"):
+        lines.append(
+            f"- 推荐点 {fact['best']} 位于「{fact['best_line_dir']}第"
+            f"{fact['best_line_no']}线」，区域「{fact.get('best_zone','')}」")
+
+    # 推荐点事实单（v1.1.2 新增，约束 LLM 对推荐点的描述）
+    bf = fact.get("best_fact") or {}
+    if bf:
+        lines.append(
+            f"- 推荐点事实：{fact.get('best','')} → {bf.get('zone','')} / "
+            f"{bf.get('line_dir','')}第{bf.get('line_no','?')}线 / "
+            f"{bf.get('territory','')}（ownership={bf.get('ownership','?')}）")
+
     if fact.get("shape_bad"):
         lines.append(f"- 坏形提示：{', '.join(fact['shape_bad'])}")
     if fact.get("shape_good"):
@@ -484,14 +642,24 @@ def fact_to_text(fact):
         lines.append(f"- 涉及坐标（棋形）：{', '.join(involved[:12])}")
     jt = fact.get("joseki") or {}
     if jt.get("matched"):
-        lines.append(f"- 定式：{jt['matched']}（角部第 {jt.get('step')} 手）")
+        lines.append(f"- 定式：{jt['matched']}（角部第 {jt.get('step')} 手，"
+                     f"角色：{jt.get('role','')}）")
         if jt.get("joseki_stones"):
             lines.append(f"- 角部已落子：{', '.join(jt['joseki_stones'][:8])}")
         if jt.get("deviation"):
             lines.append(
                 f"- 定式偏离：本手不在 {jt['matched']} 的常见应手内；"
-                f"常见应手参考：{', '.join(jt.get('expected', [])[:8])}"
-            )
+                f"常见应手参考：{', '.join(jt.get('expected', [])[:8])}")
+    # 方向/压迫判断（v1.1.2 新增）
+    dr = fact.get("direction") or {}
+    if dr.get("actual_territory"):
+        lines.append(
+            f"- 本手境地：{dr['actual_territory']}（ownership={dr.get('actual_own')}）")
+    if dr.get("best_territory"):
+        lines.append(
+            f"- 推荐点境地：{dr['best_territory']}（ownership={dr.get('best_own')}）")
+    if dr.get("region_diff"):
+        lines.append(f"- 方向提示：{dr['region_diff']}")
     ctx = fact.get("strategic_context") or {}
     if ctx.get("score_lead") is not None:
         ld = "黑方" if ctx["lead_color"] == "B" else "白方"
@@ -518,6 +686,11 @@ def fact_to_text(fact):
         "【禁止误判】若事实单写明「补断/联络」，你绝不可把本手讲成「隔离」「分断」「切断」对方；"
         "若写明「边线提示」，必须承认它靠近边线。"
     )
+    lines.append(
+        "【禁止跨盘关联】描述某点与周边子的关系时，只能引用距该点 3 格以内的棋子；"
+        "严禁把相距较远的子（例如同列但隔了多条线，或对角远子）说成「拆二」「配合」「压迫」。"
+        "推荐点的「境地/区域」以【推荐点事实】为准，不得自行构造跨盘关系。"
+    )
     return "\n".join(lines)
 
 
@@ -536,7 +709,7 @@ def extract_fact(moves, i, size, komi, color, actual_gtp, best_gtp,
       color: 'B'/'W'
       actual_gtp/best_gtp: GTP 记号
       best_pv: AI 推荐后续 GTP 序列
-      resp_before/resp_after: KataGo 响应（resp_after 需含 rootInfo.scoreLead）
+      resp_before/resp_after: KataGo 响应（resp_after 需含 ownership 顶层数组）
       winrates: 截至当前的全局胜率序列
       score_lead: KataGo rootInfo.scoreLead（黑视角目差），可外部传入
     """
@@ -544,11 +717,26 @@ def extract_fact(moves, i, size, komi, color, actual_gtp, best_gtp,
     actual_xy = gtp_to_xy(actual_gtp, size)
     best_xy = gtp_to_xy(best_gtp, size)
 
+    # ownership（优先 after 顶层；无则 before）
+    ownership = None
+    if resp_after:
+        ownership = resp_after.get("ownership")
+    if ownership is None and resp_before:
+        ownership = resp_before.get("ownership")
+
     # scoreLead 优先用传入值，否则从 resp_after 解析
     if score_lead is None and resp_after:
         score_lead = (resp_after.get("rootInfo", {}) or {}).get("scoreLead")
 
-    unsettled = count_unsettled(grid_after, size, 2)
+    # KataGo 额外字段（容错）
+    root = (resp_after or {}).get("rootInfo", {}) or {}
+    score_selfplay = root.get("scoreSelfplay")
+    score_stdev = root.get("scoreStdev")
+    expected_score = root.get("expectedScore")
+    actual_info = _find_move_info(resp_before, actual_gtp)
+
+    # 未安定大龙（结合 ownership 过滤厚势）
+    unsettled = count_unstable(grid_after, ownership, size)
     er = empty_ratio(grid_after, size)
     phase, phase_reason = detect_phase(
         i + 1, size, grid_after, score_lead, unsettled, er)
@@ -561,7 +749,7 @@ def extract_fact(moves, i, size, komi, color, actual_gtp, best_gtp,
     else:
         bad, good = [], []
 
-    joseki = _detect_joseki(moves, i, size, actual_xy)
+    joseki = _detect_joseki(moves, i, size, actual_xy, ownership)
 
     # 连接/补断/边线特征（帮助 LLM 避免把 S14 这样的补断说成「隔离」）
     color_num = 1 if color == "B" else 2
@@ -570,6 +758,17 @@ def extract_fact(moves, i, size, komi, color, actual_gtp, best_gtp,
         "on_edge_12": False, "connects_groups": False,
         "neighbor_groups": 0, "note": ""
     }
+
+    # 线数锚定
+    line_dir, line_no = line_of_xy(*actual_xy, size) if actual_xy else ("", -1)
+    best_dir, best_no = line_of_xy(*best_xy, size) if best_xy else ("", -1)
+
+    # 方向/压迫判断
+    direction = _analyze_direction(
+        grid_after, ownership, actual_xy, best_xy, size, color)
+
+    # 推荐点事实单
+    best_fact = _extract_point_fact(grid_after, ownership, best_xy, size, color)
 
     ctx = _strategic_context(
         moves, i, size, grid_after, score_lead, unsettled, er, winrates)
@@ -583,7 +782,15 @@ def extract_fact(moves, i, size, komi, color, actual_gtp, best_gtp,
             "joseki": joseki,
             "phase": phase,
             "shape_bad": bad,
+            "direction": direction,
         }, grid_after, size, actual_xy, best_xy, unsettled)
+
+    # 置信度（供前端过滤标签）
+    confidence = "低"
+    if bad or (joseki.get("role") in ("首子", "挂角", "应手") and not joseki.get("deviation")):
+        confidence = "高"
+    elif direction.get("region_diff") or joseki.get("matched"):
+        confidence = "中"
 
     fact = {
         "move_no": i + 1,
@@ -594,6 +801,11 @@ def extract_fact(moves, i, size, komi, color, actual_gtp, best_gtp,
         "best": best_gtp,
         "zone": zone_of_gtp(actual_gtp, size),
         "best_zone": zone_of_gtp(best_gtp, size),
+        # 线数锚定（v1.1.2）
+        "line_dir": line_dir,
+        "line_no": line_no,
+        "best_line_dir": best_dir,
+        "best_line_no": best_no,
         "shape_tags": bad + good,
         "shape_bad": bad,
         "shape_good": good,
@@ -601,7 +813,18 @@ def extract_fact(moves, i, size, komi, color, actual_gtp, best_gtp,
         "joseki": joseki,
         "category": category,
         "connection": connection,
+        "direction": direction,
+        "best_fact": best_fact,
         "strategic_context": ctx,
+        "confidence": confidence,
+        # KataGo 原始信号（供前端/调试）
+        "katago": {
+            "score_selfplay": score_selfplay,
+            "score_stdev": score_stdev,
+            "expected_score": expected_score,
+            "actual_prior": (actual_info or {}).get("prior"),
+            "actual_score_lead": (actual_info or {}).get("scoreLead"),
+        },
         "pv": pv,
     }
     fact["fact_text"] = fact_to_text(fact)
@@ -662,6 +885,20 @@ def _selftest():
     assert zone_of_xy(3, 10, 19) == "边上"
     assert zone_of_xy(4, 10, 19) == "中腹"
     print("  [ok] 区域判定")
+
+    # 线数锚定：R14（内部 x=16,y=5,size=19）应为「右边第三线」
+    d, n = line_of_xy(16, 5, 19)
+    assert (d, n) == ("右边", 3), f"R14 应为右边第三线, 实得 {d}{n}"
+    assert line_of_xy(3, 3, 19) == ("左边", 4) or line_of_xy(3, 3, 19) == ("上边", 4)
+    print("  [ok] 第 N 线判定（R14=右边第三线）")
+
+    # 定式角色识别：当前手为角部脱先时应标记「定式外」（复现 R14 误标问题）
+    # 黑星位 pd(14,3)，白小飞挂 pe(14,4)，黑 R14(16,5) 不在该定式序列
+    moves = [("B", "pd"), ("W", "pe"), ("B", "R14")]
+    jt = _detect_joseki(moves, 2, 19, gtp_to_xy("R14", 19))
+    assert jt["role"] in ("定式外/脱先",), f"应识别为定式外, 实得 {jt['role']}"
+    assert jt["matched"] is None, f"脱先手不应硬套定式名, 实得 {jt['matched']}"
+    print("  [ok] 定式角色-脱先识别（R14 不再误标为二间低挂）")
 
     print("== selftest passed ==")
 

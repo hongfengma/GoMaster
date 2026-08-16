@@ -9,6 +9,8 @@ const JOSEKI_RE = /定式偏离|星位|小目|三三|目外|高目|超高目/;
 
 function tagsForEntry(e: ReviewEntry | undefined, size: number): BoardTag[] {
   if (!e) return [];
+  // 仅高置信度事实标签才绘制到棋盘，避免误标（如定式名）误导用户
+  if (e.fact?.confidence !== "高") return [];
   const xy = coordToXY(e.actual_sgf ?? e.actual, size);
   if (!xy) return [];
   const tags: BoardTag[] = [];

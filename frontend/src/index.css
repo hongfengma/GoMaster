@@ -659,6 +659,17 @@ body {
   color: #2e7d32;
   border-color: #c8e6c9;
 }
+.report-best-fact {
+  font-size: 11px;
+  color: #555;
+  background: #f3f6fb;
+  border: 1px dashed #b9c8e0;
+  border-radius: 8px;
+  padding: 3px 8px;
+  margin-top: 6px;
+  text-align: center;
+  max-width: 320px;
+}
 
 /* ---------- Markdown 讲解 ---------- */
 .explain-empty {

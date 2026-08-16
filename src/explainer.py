@@ -160,7 +160,22 @@ def _fallback_explain(move_no, color_cn, actual_gtp, best_gtp,
     )
 
 
-def verify_explain(text, fact_sheet):
+_GTP_COORD_RE = re.compile(r"[A-HJ-T][0-9]{1,2}")
+
+
+def _extract_gtp_coords(text):
+    """从讲解文本中提取所有合法 GTP 坐标（列 A–T 跳 I + 数字），返回 [(原始串, (x,y))]。"""
+    out = []
+    if not text:
+        return out
+    for m in _GTP_COORD_RE.finditer(text):
+        xy = gtp_to_xy(m.group(), 19)
+        if xy:
+            out.append((m.group(), xy))
+    return out
+
+
+def verify_explain(text, fact_sheet, size=19):
     """规则校验器（Verifier）：用事实单核对讲解中的事实声明，不调用 API。
 
     命中明显矛盾时返回告警字符串列表；无矛盾返回空列表。
@@ -186,6 +201,24 @@ def verify_explain(text, fact_sheet):
     if conn.get("connects_groups") and any(k in text for k in ("隔离", "分断", "切断", "断开")):
         warns.append("事实单显示本手为补断/联络，文中却用「隔离/分断/切断」，请以事实单为准")
 
+    # 跨盘关联检测：把相距过远的子说成拆二/配合/压迫等关系
+    coords = _extract_gtp_coords(text)
+    relation_kw = ("拆二", "配合", "联络", "压迫", "扩张", "补断", "连接", "形成")
+    if any(k in text for k in relation_kw) and len(coords) >= 2:
+        for i in range(len(coords)):
+            for j in range(i + 1, len(coords)):
+                a, b = coords[i][1], coords[j][1]
+                dist = abs(a[0] - b[0]) + abs(a[1] - b[1])
+                if dist > 3:
+                    warns.append(
+                        f"事实单未支撑跨盘关联：{coords[i][0]} 与 {coords[j][0]} "
+                        f"相距 {dist} 格，文中却描述拆二/配合/压迫等关系，"
+                        f"请仅引用事实单内相邻坐标")
+                    break
+            else:
+                continue
+            break
+
     return warns
 
 
@@ -208,7 +241,9 @@ def verify_and_correct(content, fact_sheet, llm=None):
         "2. 区域概念错误（第四线及以下只能叫角部/边上，不能叫中腹）；\n"
         "3. 阶段/棋形/定式名称与事实单矛盾；\n"
         "4. 把【AI 后续主变】变化图里的子当作已经落下的子来讲解；\n"
-        "5. 虚构事实单未列出的棋理或棋谚。\n"
+        "5. 虚构事实单未列出的棋理或棋谚；\n"
+        "6. 跨盘关联错误：把相距 3 格以上的远端子说成「拆二/配合/压迫/扩张」，"
+        "或把【推荐点事实】中落入「对方强势力」的点说成「压迫对方」（应讲成打入/破空/侵消）。\n"
         "若发现任何矛盾，请直接输出修正后的完整讲解（严格保持原来的 5 个 Markdown 标题分段，"
         "280 字以内，坐标必须正确且来自事实单）。若讲解与事实单完全一致，"
         "请仅输出「无矛盾」三个字，不要输出其他内容。"
@@ -302,6 +337,10 @@ def explain_move(move_no, color_cn, actual_sgf, best_sgf,
         f"6. 若事实单写明「补断/联络」，本手具有连接己方棋块的作用，"
         f"你绝不可把它讲成「隔离」「分断」「切断」对方；"
         f"若事实单写明「边线提示」，必须承认它靠近边线，不可说其深入中腹。\n"
+        f"6.5 严禁跨盘关联：描述某点与周边子的「拆二/配合/联络/压迫/扩张」关系时，"
+        f"只能引用距该点 3 格以内的棋子（参见【事实单】的涉及坐标与推荐点事实）。"
+        f"不得将同列隔多条线、或对角的远量子说成「拆二/配合/压迫」；"
+        f"若【推荐点事实】显示其落入「对方强势力」，应讲成打入/破空/侵消，而非「压迫对方」。\n"
         f"7. 输出必须严格按下列 5 个 Markdown 标题分段，不要增减段落：\n"
         f"### 问题定性\n### 关键棋理\n### 推荐点意图\n### 后续推演\n### 不确定点\n"
         f"8. 全程使用 Markdown（**加粗**、列表），总篇幅控制在 280 字以内。\n\n"
@@ -362,7 +401,7 @@ def explain_move(move_no, color_cn, actual_sgf, best_sgf,
                                  best_pv_gtp=best_pv_gtp, zone=zone)
     # Verifier：规则校验（不增 API 调用），命中矛盾则附系统提示
     if fact_sheet:
-        warns = verify_explain(content, fact_sheet)
+        warns = verify_explain(content, fact_sheet, size)
         if warns:
             content = content.rstrip() + "\n\n> 系统校验提示：" + "；".join(warns)
 
@@ -371,7 +410,7 @@ def explain_move(move_no, color_cn, actual_sgf, best_sgf,
     if fact_sheet and verify:
         content = verify_and_correct(content, fact_sheet, llm=llm)
         # 再次轻量规则校验，防止修正后仍留痕
-        warns2 = verify_explain(content, fact_sheet)
+        warns2 = verify_explain(content, fact_sheet, size)
         if warns2:
             content = content.rstrip() + "\n\n> 系统校验提示：" + "；".join(warns2)
     return content

@@ -183,7 +183,13 @@ export default function ReportView({ onClose }: { onClose: () => void }) {
                   第 {e.no} 手（{cn}方）　实际 <b>{e.actual}</b> · 推荐{" "}
                   <b className="best">{e.best}</b>
                 </div>
-                {e.fact_tags && e.fact_tags.length > 0 && (
+                {e.fact?.best_fact && (
+                  <div className="report-best-fact">
+                    推荐点事实：{e.fact.best_fact.zone} / {e.fact.best_fact.line_dir}第
+                    {e.fact.best_fact.line_no}线 · {e.fact.best_fact.territory}
+                  </div>
+                )}
+                {e.fact_tags && e.fact_tags.length > 0 && e.fact?.confidence === "高" && (
                   <div className="report-tags">
                     {e.fact_tags.map((t) => (
                       <span

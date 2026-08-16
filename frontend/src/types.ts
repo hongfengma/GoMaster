@@ -6,6 +6,55 @@ export interface Top3Entry {
   pv: string[]; // GTP 坐标原始序列
 }
 
+export interface FactSheet {
+  phase?: string;
+  zone?: string;
+  line_dir?: string;
+  line_no?: number;
+  best_zone?: string;
+  best_line_dir?: string;
+  best_line_no?: number;
+  shape_bad?: string[];
+  shape_good?: string[];
+  shape_stones?: string[];
+  joseki?: {
+    matched?: string | null;
+    relation?: string;
+    role?: string;
+    step?: number;
+    deviation?: boolean;
+    expected?: string[];
+    joseki_stones?: string[];
+    confidence?: string;
+    note?: string;
+  };
+  category?: string;
+  connection?: {
+    on_edge_12?: boolean;
+    connects_groups?: boolean;
+    neighbor_groups?: number;
+    note?: string;
+  };
+  direction?: {
+    actual_territory?: string;
+    actual_own?: number;
+    best_territory?: string;
+    best_own?: number;
+    region_diff?: string;
+  };
+  best_fact?: {
+    zone?: string;
+    line_dir?: string;
+    line_no?: number;
+    ownership?: number;
+    territory?: string;
+    nearby_stones?: number;
+  };
+  confidence?: "高" | "中" | "低";
+  pv?: string[];
+  fact_text?: string;
+}
+
 export interface ReviewEntry {
   no: number;
   color: StoneColor;
@@ -22,6 +71,7 @@ export interface ReviewEntry {
   actual_wr: number; // 0..1，落子方视角
   delta: number; // 0..1，ai_wr - actual_wr
   fact_tags?: string[]; // Fact Extractor 识别出的事实标签（坏形/定式等），供失误项展示
+  fact?: FactSheet; // Fact Extractor 完整事实单（含 confidence / best_fact 等）
   category?: string; // 失误分类（方向/死活/官子/棋形/定式偏离）
   explain?: string;
 }

@@ -188,6 +188,104 @@ def zone_of_gtp(gtp: str, size: int) -> str:
     return zone_of_xy(xy[0], xy[1], size)
 
 
+def nearest_edge(x: int, y: int, size: int):
+    """返回 (最近边方向中文, 距该边的格数 d)。
+
+    方向中文：左边 / 右边 / 上边 / 下边（对应棋盘 x 小 / x 大 / y 小 / y 大）。
+    围棋中「第 N 线」= d + 1（1-based）：d=0 第一线，d=1 第二线，d=2 第三线…
+    """
+    left, right = x, size - 1 - x
+    top, bottom = y, size - 1 - y
+    d = min(left, right, top, bottom)
+    if d == left:
+        return "左边", d
+    if d == right:
+        return "右边", d
+    if d == top:
+        return "上边", d
+    return "下边", d
+
+
+def line_of_xy(x: int, y: int, size: int):
+    """返回 (最近边方向中文, 第几线)。
+
+    例：R14（内部 x=16,y=5,size=19）→ 距右边 = 19-1-16 = 2 → ('右边', 3) 即右边第三线。
+    这是围棋术语里“第 N 线”的标准算法：从最近边向里数、1-based。
+    """
+    if x < 0 or y < 0 or x >= size or y >= size:
+        return "", -1
+    direction, d = nearest_edge(x, y, size)
+    return direction, d + 1
+
+
+def line_of_gtp(gtp: str, size: int):
+    """GTP 坐标 → (方向中文, 第几线)；非法坐标返回 ('', -1)。"""
+    xy = gtp_to_xy(gtp, size)
+    if not xy:
+        return "", -1
+    return line_of_xy(xy[0], xy[1], size)
+
+
+# ---------------------------------------------------------------------------
+# ownership 辅助（KataGo includeOwnership 返回的整盘领地概率数组）
+#   - 数组长度 = size*size，row-major：index = y*size + x，y=0 为顶行。
+#   - 值域 [-1, 1]：正=黑方领地概率，负=白方领地概率，0≈双方均势。
+# ---------------------------------------------------------------------------
+def ownership_at(ownership, x, y, size):
+    """取 (x,y) 处的 ownership 值（黑正白负）。无数据返回 0。"""
+    if not ownership or not (0 <= x < size and 0 <= y < size):
+        return 0.0
+    idx = y * size + x
+    if idx < 0 or idx >= len(ownership):
+        return 0.0
+    try:
+        return float(ownership[idx])
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def is_stable_group(grid, ownership, x, y, size):
+    """判定 (x,y) 所在棋子群是否「安定/已定」。
+
+    结合两个信号，避免把厚势/活棋误判为未安定大龙：
+      - 棋子群气数：>=3 气通常已具备眼位潜力（非对杀紧气）；
+      - 群内 ownership 均值：|>0.85| 表示 KataGo 已认定该块归属确定（活棋/已死）。
+    返回 (stable: bool, mean_own: float, libs: int)。
+    """
+    if not (0 <= x < size and 0 <= y < size) or grid[y][x] == 0:
+        return True, 0.0, 0
+    stones, libs = group_and_liberties(grid, x, y, size)
+    if not ownership:
+        # 没有 ownership 信息时，仅靠气数兜底：>=3 气视为相对稳定
+        return (len(libs) >= 3), 0.0, len(libs)
+    vals = [ownership_at(ownership, sx, sy, size) for (sx, sy) in stones]
+    mean_own = sum(vals) / len(vals) if vals else 0.0
+    # 安定条件：气数充足 或 领地归属明确
+    stable = (len(libs) >= 3) or (abs(mean_own) >= 0.85)
+    return stable, mean_own, len(libs)
+
+
+def group_ownership(grid, ownership, x, y, size):
+    """返回 (x,y) 所在棋子群的 ownership 均值/最小/气数/颜色。
+
+    用于判断落点周围棋块的归属倾向（自己强还是对方强、是否处于交战边缘）。
+    """
+    color = grid[y][x] if (0 <= x < size and 0 <= y < size) else 0
+    if color == 0:
+        return {"color": 0, "mean": 0.0, "min": 0.0, "libs": 0, "stones": 0}
+    stones, libs = group_and_liberties(grid, x, y, size)
+    vals = [ownership_at(ownership, sx, sy, size) for (sx, sy) in stones]
+    mean = sum(vals) / len(vals) if vals else 0.0
+    mn = min(vals) if vals else 0.0
+    return {
+        "color": color,
+        "mean": round(mean, 3),
+        "min": round(mn, 3),
+        "libs": len(libs),
+        "stones": len(stones),
+    }
+
+
 def nearby_stones(grid, x: int, y: int, size: int, radius: int = 2,
                   color: int = 0):
     """返回以 (x,y) 为中心、radius 范围内的棋子坐标列表。

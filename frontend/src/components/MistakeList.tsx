@@ -44,7 +44,7 @@ export default function MistakeList() {
             {e?.category && (
               <div className="mistake-category">{e.category}</div>
             )}
-            {e?.fact_tags && e.fact_tags.length > 0 && (
+            {e?.fact_tags && e.fact_tags.length > 0 && e.fact?.confidence === "高" && (
               <div className="fact-tags">
                 {e.fact_tags.map((t) => (
                   <span
